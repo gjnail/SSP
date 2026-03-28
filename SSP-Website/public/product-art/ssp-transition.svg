@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-label="SSP Transition temporary cover art">
+  <rect width="1200" height="900" fill="#121016"/>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#ff7448"/>
+      <stop offset="48%" stop-color="#ffd84d"/>
+      <stop offset="100%" stop-color="#22c7ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="44" y="44" width="1112" height="812" rx="24" fill="url(#bg)" stroke="#121016" stroke-width="8"/>
+  <path d="M122 692c112-53 182-109 247-199 71-98 149-263 345-263 112 0 196 44 364 169" fill="none" stroke="#121016" stroke-width="20"/>
+  <path d="M122 744c166-34 274-96 374-194 86-84 178-154 334-154 96 0 176 22 248 56" fill="none" stroke="#fff8ec" stroke-width="10"/>
+  <text x="110" y="212" fill="#121016" font-family="Bahnschrift, Arial Narrow, sans-serif" font-size="156" font-weight="700" letter-spacing="-8">TRANSITION</text>
+  <text x="114" y="314" fill="#121016" font-family="Aptos, Segoe UI, sans-serif" font-size="40" font-weight="700">Preset-led fades, washes, exits, and risers from one macro move.</text>
+  <rect x="112" y="384" width="280" height="62" rx="8" fill="#121016"/>
+  <text x="138" y="426" fill="#fff8ec" font-family="Aptos, Segoe UI, sans-serif" font-size="28" font-weight="700">SKY LIFT / WASH OUT / AIR LIFT</text>
+  <text x="112" y="822" fill="#121016" font-family="Aptos, Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="4">TEMP PRODUCT ART / SSP / TRANSITION</text>
+</svg>

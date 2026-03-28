@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-label="SSP Multiband Sidechain temporary cover art">
+  <rect width="1200" height="900" fill="#0d1117"/>
+  <rect x="52" y="52" width="1096" height="796" rx="22" fill="#f6fbff" stroke="#0d1117" stroke-width="8"/>
+  <rect x="88" y="88" width="1024" height="190" fill="#22c7ff"/>
+  <rect x="88" y="278" width="1024" height="190" fill="#6cf0c4"/>
+  <rect x="88" y="468" width="1024" height="190" fill="#ffb24a"/>
+  <rect x="88" y="658" width="1024" height="154" fill="#0d1117"/>
+  <text x="126" y="204" fill="#0d1117" font-family="Bahnschrift, Arial Narrow, sans-serif" font-size="116" font-weight="700" letter-spacing="-6">MULTIBAND</text>
+  <text x="126" y="392" fill="#0d1117" font-family="Bahnschrift, Arial Narrow, sans-serif" font-size="116" font-weight="700" letter-spacing="-6">SIDECHAIN</text>
+  <text x="128" y="564" fill="#0d1117" font-family="Aptos, Segoe UI, sans-serif" font-size="34" font-weight="700">Low / Mid / High control with linked edits, solo bands, and crossover shaping.</text>
+  <circle cx="832" cy="742" r="34" fill="#22c7ff"/>
+  <circle cx="928" cy="742" r="34" fill="#6cf0c4"/>
+  <circle cx="1024" cy="742" r="34" fill="#ffb24a"/>
+  <text x="124" y="760" fill="#fff8ec" font-family="Bahnschrift, Arial Narrow, sans-serif" font-size="66" font-weight="700" letter-spacing="-3">LOW / MID / HIGH</text>
+  <text x="126" y="810" fill="#b8c7d4" font-family="Aptos, Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="4">TEMP PRODUCT ART / SSP / MULTIBAND</text>
+</svg>

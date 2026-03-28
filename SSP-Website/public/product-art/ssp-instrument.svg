@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720" role="img" aria-labelledby="title desc">
+  <title id="title">SSP Instrument</title>
+  <desc id="desc">Temporary category artwork for SSP instrument products.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c8f3ff" />
+      <stop offset="100%" stop-color="#78d8ff" />
+    </linearGradient>
+  </defs>
+  <rect width="960" height="720" fill="#101216" />
+  <rect x="40" y="40" width="880" height="640" rx="28" fill="url(#bg)" stroke="#101216" stroke-width="10" />
+  <rect x="92" y="112" width="776" height="496" rx="24" fill="#11161d" stroke="#101216" stroke-width="8" />
+  <rect x="154" y="430" width="652" height="104" rx="18" fill="#fffdf8" />
+  <g fill="#101216">
+    <rect x="174" y="448" width="36" height="68" rx="8" />
+    <rect x="228" y="448" width="36" height="68" rx="8" />
+    <rect x="282" y="448" width="36" height="68" rx="8" />
+    <rect x="336" y="448" width="36" height="68" rx="8" />
+    <rect x="390" y="448" width="36" height="68" rx="8" />
+    <rect x="444" y="448" width="36" height="68" rx="8" />
+    <rect x="498" y="448" width="36" height="68" rx="8" />
+    <rect x="552" y="448" width="36" height="68" rx="8" />
+    <rect x="606" y="448" width="36" height="68" rx="8" />
+    <rect x="660" y="448" width="36" height="68" rx="8" />
+    <rect x="714" y="448" width="36" height="68" rx="8" />
+  </g>
+  <path d="M156 304c70 0 84-90 144-90s72 122 132 122 80-156 152-156 86 124 136 124 82-52 104-52" fill="none" stroke="#78d8ff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="156" y="188" width="196" height="44" rx="10" fill="#dff7ff" />
+  <text x="181" y="219" fill="#101216" font-family="Arial, sans-serif" font-size="24" font-weight="700">SSP CATEGORY</text>
+  <text x="156" y="590" fill="#fffdf8" font-family="Arial, sans-serif" font-size="88" font-weight="700">INSTRUMENT</text>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720" role="img" aria-labelledby="title desc">
+  <title id="title">SSP Creative</title>
+  <desc id="desc">Temporary category artwork for SSP creative products.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffd7c8" />
+      <stop offset="100%" stop-color="#ff9a76" />
+    </linearGradient>
+  </defs>
+  <rect width="960" height="720" fill="#101216" />
+  <rect x="40" y="40" width="880" height="640" rx="28" fill="url(#bg)" stroke="#101216" stroke-width="10" />
+  <rect x="92" y="112" width="776" height="496" rx="24" fill="#191013" stroke="#101216" stroke-width="8" />
+  <path d="M156 474c56-48 112-72 168-72 92 0 122 94 204 94 76 0 120-136 202-136 44 0 82 16 118 48" fill="none" stroke="#ffd9cc" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M184 294l112 66-112 66z" fill="#ff7448" />
+  <path d="M620 272h84v176h-84z" fill="#ff7448" />
+  <rect x="156" y="188" width="196" height="44" rx="10" fill="#ffd9cc" />
+  <text x="181" y="219" fill="#101216" font-family="Arial, sans-serif" font-size="24" font-weight="700">SSP CATEGORY</text>
+  <text x="156" y="590" fill="#fffdf8" font-family="Arial, sans-serif" font-size="92" font-weight="700">CREATIVE</text>
+</svg>

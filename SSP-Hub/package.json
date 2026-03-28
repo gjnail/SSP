@@ -1,0 +1,60 @@
+{
+  "name": "ssp-hub",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Desktop installer and activation hub for Stupid Simple Plugins.",
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\" \"npm:dev:app\"",
+    "dev:renderer": "vite --host 127.0.0.1 --port 5173",
+    "dev:electron": "tsc -p tsconfig.electron.json --watch --preserveWatchOutput",
+    "dev:app": "wait-on tcp:127.0.0.1:5173 file:dist-electron/electron/main.js && cross-env ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron .",
+    "build": "npm run build:renderer && npm run build:electron",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "preview": "vite preview --host 127.0.0.1 --port 4174",
+    "package:win": "npm run build && electron-builder --win nsis",
+    "package:mac": "npm run build && electron-builder --mac dmg"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react-swc": "^3.11.0",
+    "cross-env": "^10.1.0",
+    "electron-builder": "^24.13.3",
+    "typescript": "~5.9.3",
+    "vite": "^6.4.0"
+  },
+  "dependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^41.0.4",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.2",
+    "wait-on": "^9.0.4"
+  },
+  "build": {
+    "appId": "com.stupidsimpleplugins.hub",
+    "productName": "SSP Hub",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.music"
+    }
+  }
+}

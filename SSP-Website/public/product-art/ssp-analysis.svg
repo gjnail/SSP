@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720" role="img" aria-labelledby="title desc">
+  <title id="title">SSP Analysis</title>
+  <desc id="desc">Temporary category artwork for SSP analysis products.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff3c9" />
+      <stop offset="100%" stop-color="#ffd84d" />
+    </linearGradient>
+  </defs>
+  <rect width="960" height="720" fill="#101216" />
+  <rect x="40" y="40" width="880" height="640" rx="28" fill="url(#bg)" stroke="#101216" stroke-width="10" />
+  <rect x="92" y="112" width="776" height="496" rx="24" fill="#12161c" stroke="#101216" stroke-width="8" />
+  <g stroke="#39414e" stroke-width="4">
+    <line x1="156" y1="520" x2="820" y2="520" />
+    <line x1="156" y1="456" x2="820" y2="456" />
+    <line x1="156" y1="392" x2="820" y2="392" />
+    <line x1="156" y1="328" x2="820" y2="328" />
+    <line x1="156" y1="264" x2="820" y2="264" />
+  </g>
+  <path d="M156 508c72 0 102-142 158-142s44 68 96 68c58 0 60-182 134-182s52 116 110 116c70 0 96-86 166-86" fill="none" stroke="#ffd84d" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="156" y="188" width="196" height="44" rx="10" fill="#ffd84d" />
+  <text x="182" y="219" fill="#101216" font-family="Arial, sans-serif" font-size="24" font-weight="700">SSP CATEGORY</text>
+  <text x="156" y="590" fill="#fffdf8" font-family="Arial, sans-serif" font-size="88" font-weight="700">ANALYSIS</text>
+</svg>

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-label="SSP Reverb temporary cover art">
+  <rect width="1200" height="900" fill="#0b1020"/>
+  <defs>
+    <radialGradient id="verb" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#fff8ec"/>
+      <stop offset="30%" stop-color="#22c7ff"/>
+      <stop offset="68%" stop-color="#5b7dff"/>
+      <stop offset="100%" stop-color="#0b1020"/>
+    </radialGradient>
+  </defs>
+  <rect x="46" y="46" width="1108" height="808" rx="24" fill="#f8fbff" stroke="#0b1020" stroke-width="8"/>
+  <circle cx="860" cy="390" r="292" fill="url(#verb)"/>
+  <text x="116" y="208" fill="#0b1020" font-family="Bahnschrift, Arial Narrow, sans-serif" font-size="150" font-weight="700" letter-spacing="-8">REVERB</text>
+  <text x="120" y="304" fill="#32405f" font-family="Aptos, Segoe UI, sans-serif" font-size="38" font-weight="700">Mode-based ambience with wide tails, quick tone shaping, and mix-speed controls.</text>
+  <rect x="120" y="394" width="322" height="76" rx="10" fill="#0b1020"/>
+  <text x="148" y="442" fill="#fff8ec" font-family="Aptos, Segoe UI, sans-serif" font-size="32" font-weight="700">BLOOM / WIDTH / TONE / MIX</text>
+  <path d="M120 604c88-86 154-122 232-122 80 0 150 38 238 128 87 88 140 112 202 112" fill="none" stroke="#22c7ff" stroke-width="14"/>
+  <path d="M120 654c70-58 136-86 212-86 84 0 164 44 236 116 63 64 136 94 244 94" fill="none" stroke="#0b1020" stroke-width="10"/>
+  <text x="120" y="812" fill="#32405f" font-family="Aptos, Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="4">TEMP PRODUCT ART / SSP / REVERB</text>
+</svg>

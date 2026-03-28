@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-label="SSP AutoSaver temporary cover art">
+  <rect width="1200" height="900" fill="#121416"/>
+  <rect x="48" y="48" width="1104" height="804" rx="24" fill="#fffaf0" stroke="#121416" stroke-width="8"/>
+  <rect x="94" y="94" width="1012" height="712" fill="#ffd84d" opacity="0.18" stroke="#121416" stroke-width="6" stroke-dasharray="22 18"/>
+  <text x="118" y="212" fill="#121416" font-family="Bahnschrift, Arial Narrow, sans-serif" font-size="148" font-weight="700" letter-spacing="-8">AUTOSAVER</text>
+  <text x="120" y="310" fill="#5a5d66" font-family="Aptos, Segoe UI, sans-serif" font-size="38" font-weight="700">Coming soon utility slot. Folder exists in SSP, but the product shape is not defined yet.</text>
+  <rect x="120" y="392" width="312" height="82" rx="10" fill="#121416"/>
+  <text x="164" y="444" fill="#fff8ec" font-family="Aptos, Segoe UI, sans-serif" font-size="34" font-weight="700">COMING SOON</text>
+  <path d="M118 650h964" stroke="#121416" stroke-width="10"/>
+  <path d="M118 700h704" stroke="#121416" stroke-width="10"/>
+  <path d="M118 750h542" stroke="#121416" stroke-width="10"/>
+  <text x="118" y="812" fill="#5a5d66" font-family="Aptos, Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="4">TEMP PRODUCT ART / SSP / AUTOSAVER</text>
+</svg>

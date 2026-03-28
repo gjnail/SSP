@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720" role="img" aria-labelledby="title desc">
+  <title id="title">SSP Dynamics</title>
+  <desc id="desc">Temporary category artwork for SSP dynamics products.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff0b8" />
+      <stop offset="100%" stop-color="#ffd84d" />
+    </linearGradient>
+  </defs>
+  <rect width="960" height="720" fill="#101216" />
+  <rect x="40" y="40" width="880" height="640" rx="28" fill="url(#bg)" stroke="#101216" stroke-width="10" />
+  <rect x="92" y="112" width="776" height="496" rx="24" fill="#fffdf8" stroke="#101216" stroke-width="8" />
+  <path d="M156 448c64 0 84-180 148-180s70 234 142 234 82-306 154-306 86 196 156 196" fill="none" stroke="#101216" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="156" y="188" width="196" height="44" rx="10" fill="#101216" />
+  <text x="182" y="219" fill="#fffdf8" font-family="Arial, sans-serif" font-size="24" font-weight="700">SSP CATEGORY</text>
+  <text x="156" y="590" fill="#101216" font-family="Arial, sans-serif" font-size="92" font-weight="700">DYNAMICS</text>
+</svg>

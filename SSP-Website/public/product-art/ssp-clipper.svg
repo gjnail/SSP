@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-label="SSP Clipper temporary cover art">
+  <rect width="1200" height="900" fill="#0b0d10"/>
+  <rect x="50" y="50" width="1100" height="800" rx="24" fill="#fff7f0" stroke="#0b0d10" stroke-width="8"/>
+  <rect x="90" y="90" width="1020" height="140" fill="#ff7448"/>
+  <text x="120" y="188" fill="#0b0d10" font-family="Bahnschrift, Arial Narrow, sans-serif" font-size="136" font-weight="700" letter-spacing="-7">CLIPPER</text>
+  <path d="M124 512h156v-158h118v158h154v-98h118v98h154v-228h118v404h-118v-68h-154v68H552v-70H398v70H124z" fill="#0b0d10"/>
+  <line x1="124" y1="688" x2="1078" y2="688" stroke="#0b0d10" stroke-width="10"/>
+  <line x1="124" y1="734" x2="918" y2="734" stroke="#ff7448" stroke-width="10"/>
+  <text x="126" y="308" fill="#5a5d66" font-family="Aptos, Segoe UI, sans-serif" font-size="38" font-weight="700">Oversampled peak shaving from invisible cleanup to obvious bite.</text>
+  <text x="126" y="808" fill="#5a5d66" font-family="Aptos, Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="4">TEMP PRODUCT ART / SSP / CLIPPER</text>
+</svg>

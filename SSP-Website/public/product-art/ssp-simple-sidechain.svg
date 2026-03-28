@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-label="SSP Simple Sidechain temporary cover art">
+  <rect width="1200" height="900" fill="#101216"/>
+  <rect x="44" y="44" width="1112" height="812" rx="24" fill="#fff8ec" stroke="#101216" stroke-width="8"/>
+  <rect x="84" y="84" width="240" height="732" fill="#ffd84d"/>
+  <path d="M174 156h62l34 34h-56l-24 24h58l38 38h-59l-25 25h65l-34 34h-97l35-35h58l22-22h-56l-39-39h57l23-23h-54z" fill="#101216"/>
+  <text x="364" y="198" fill="#101216" font-family="Bahnschrift, Arial Narrow, sans-serif" font-size="120" font-weight="700" letter-spacing="-6">SIMPLE</text>
+  <text x="364" y="300" fill="#101216" font-family="Bahnschrift, Arial Narrow, sans-serif" font-size="120" font-weight="700" letter-spacing="-6">SIDECHAIN</text>
+  <text x="368" y="384" fill="#5a5d66" font-family="Aptos, Segoe UI, sans-serif" font-size="36" font-weight="700">One curve. Audio, BPM sync, and MIDI retrigger.</text>
+  <rect x="368" y="464" width="732" height="18" fill="#101216"/>
+  <rect x="368" y="500" width="516" height="18" fill="#ffd84d"/>
+  <rect x="368" y="536" width="652" height="18" fill="#101216"/>
+  <path d="M368 680c120-124 224-98 306-176 61-58 97-131 173-131 78 0 145 60 253 181" fill="none" stroke="#101216" stroke-width="14"/>
+  <circle cx="368" cy="680" r="18" fill="#101216"/>
+  <circle cx="674" cy="504" r="18" fill="#ffd84d" stroke="#101216" stroke-width="8"/>
+  <circle cx="1100" cy="554" r="18" fill="#101216"/>
+  <text x="366" y="784" fill="#5a5d66" font-family="Aptos, Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="4">TEMP PRODUCT ART / SSP / SIDECHAIN</text>
+</svg>

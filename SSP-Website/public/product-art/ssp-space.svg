@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720" role="img" aria-labelledby="title desc">
+  <title id="title">SSP Space</title>
+  <desc id="desc">Temporary category artwork for SSP space products.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#bcefff" />
+      <stop offset="100%" stop-color="#22c7ff" />
+    </linearGradient>
+  </defs>
+  <rect width="960" height="720" fill="#101216" />
+  <rect x="40" y="40" width="880" height="640" rx="28" fill="url(#bg)" stroke="#101216" stroke-width="10" />
+  <rect x="92" y="112" width="776" height="496" rx="24" fill="#0f1820" stroke="#101216" stroke-width="8" />
+  <circle cx="306" cy="362" r="132" fill="none" stroke="#c8f5ff" stroke-width="18" />
+  <circle cx="490" cy="362" r="164" fill="none" stroke="#7adfff" stroke-width="18" />
+  <circle cx="698" cy="362" r="118" fill="none" stroke="#22c7ff" stroke-width="18" />
+  <rect x="156" y="188" width="196" height="44" rx="10" fill="#c8f5ff" />
+  <text x="181" y="219" fill="#101216" font-family="Arial, sans-serif" font-size="24" font-weight="700">SSP CATEGORY</text>
+  <text x="156" y="590" fill="#fffdf8" font-family="Arial, sans-serif" font-size="104" font-weight="700">SPACE</text>
+</svg>
