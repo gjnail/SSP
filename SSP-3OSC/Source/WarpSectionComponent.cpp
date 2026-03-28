@@ -62,6 +62,9 @@ WarpSectionComponent::WarpSectionComponent(PluginProcessor& processor, juce::Aud
     afterFilterButton.onClick = [this] { setSaturatorPlacement(true); };
 
     const std::array<juce::Colour, 2> slotAccents{ juce::Colour(0xff68f0d0), juce::Colour(0xfff6ca62) };
+    const std::array<const char*, 3> legacyWarpNames{ "FM", "Sync", "Bend" };
+    const std::array<juce::Colour, 3> legacyWarpAccents{ juce::Colour(0xff59d7ff), juce::Colour(0xffb7ff70), juce::Colour(0xffffca6a) };
+    const std::array<const char*, 3> legacyWarpParamSuffixes{ "WarpFM", "WarpSync", "WarpBend" };
 
     for (int osc = 0; osc < 3; ++osc)
     {
@@ -83,6 +86,24 @@ WarpSectionComponent::WarpSectionComponent(PluginProcessor& processor, juce::Aud
 
         const auto prefix = "osc" + juce::String(osc + 1);
         fmSourceAttachments[(size_t) osc] = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(apvts, prefix + "WarpFMSource", fmSourceBox);
+
+        for (int legacyIndex = 0; legacyIndex < 3; ++legacyIndex)
+        {
+            auto& legacyLabel = legacyWarpLabels[(size_t) osc][(size_t) legacyIndex];
+            auto& legacySlider = legacyWarpSliders[(size_t) osc][(size_t) legacyIndex];
+
+            addAndMakeVisible(legacyLabel);
+            legacyLabel.setText(legacyWarpNames[(size_t) legacyIndex], juce::dontSendNotification);
+            styleWarpLabel(legacyLabel, 10.0f, reactorui::textMuted(), juce::Justification::centred);
+
+            const auto parameterID = prefix + legacyWarpParamSuffixes[(size_t) legacyIndex];
+            legacySlider = std::make_unique<ModulationKnob>(processor, parameterID, reactormod::Destination::none,
+                                                            legacyWarpAccents[(size_t) legacyIndex], 54, 18);
+            addAndMakeVisible(*legacySlider);
+
+            legacyWarpAttachments[(size_t) osc][(size_t) legacyIndex] =
+                std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, parameterID, *legacySlider);
+        }
 
         for (int slot = 0; slot < 2; ++slot)
         {
@@ -121,7 +142,7 @@ void WarpSectionComponent::paint(juce::Graphics& g)
     auto content = getLocalBounds().reduced(14);
     content.removeFromTop(28);
 
-    auto globalRow = content.removeFromTop(102);
+    auto globalRow = content.removeFromTop(98);
     auto leftCard = globalRow.removeFromLeft(164).toFloat();
     globalRow.removeFromLeft(14);
     auto midCard = globalRow.removeFromLeft(164).toFloat();
@@ -151,7 +172,7 @@ void WarpSectionComponent::resized()
     titleLabel.setBounds(area.removeFromTop(20));
     area.removeFromTop(8);
 
-    auto globalRow = area.removeFromTop(102);
+    auto globalRow = area.removeFromTop(98);
     auto leftCard = globalRow.removeFromLeft(164);
     globalRow.removeFromLeft(14);
     auto midCard = globalRow.removeFromLeft(164);
@@ -193,6 +214,22 @@ void WarpSectionComponent::resized()
         fmSourceBoxes[(size_t) osc].setBounds(fmSourceRow);
         group.removeFromTop(6);
 
+        auto legacyRow = group.removeFromTop(70);
+        const int legacyGap = 8;
+        const int legacyWidth = (legacyRow.getWidth() - legacyGap * 2) / 3;
+        for (int legacyIndex = 0; legacyIndex < 3; ++legacyIndex)
+        {
+            auto legacyArea = legacyRow.removeFromLeft(legacyWidth);
+            if (legacyIndex < 2)
+                legacyRow.removeFromLeft(legacyGap);
+
+            legacyWarpLabels[(size_t) osc][(size_t) legacyIndex].setBounds(legacyArea.removeFromTop(14));
+            legacyArea.removeFromTop(2);
+            if (legacyWarpSliders[(size_t) osc][(size_t) legacyIndex] != nullptr)
+                legacyWarpSliders[(size_t) osc][(size_t) legacyIndex]->setBounds(legacyArea);
+        }
+
+        group.removeFromTop(6);
         const int slotGap = 12;
         const int slotWidth = (group.getWidth() - slotGap) / 2;
 

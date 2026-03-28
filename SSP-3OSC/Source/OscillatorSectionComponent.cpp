@@ -173,6 +173,8 @@ OscillatorSectionComponent::OscillatorSectionComponent(PluginProcessor& processo
                                 : oscIndex == 2 ? reactormod::Destination::osc2Level
                                                 : reactormod::Destination::osc3Level,
                   juce::Colour(0xffffb357), 88, 26),
+      coarseSlider(processor, "osc" + juce::String(oscillator) + "Coarse",
+                   reactormod::Destination::none, juce::Colour(0xffffb357), 88, 26),
       detuneSlider(processor, "osc" + juce::String(oscillator) + "Detune",
                    oscIndex == 1 ? reactormod::Destination::osc1Detune
                                  : oscIndex == 2 ? reactormod::Destination::osc2Detune
@@ -200,6 +202,7 @@ OscillatorSectionComponent::OscillatorSectionComponent(PluginProcessor& processo
     addAndMakeVisible(waveLabel);
     addAndMakeVisible(octaveLabel);
     addAndMakeVisible(levelLabel);
+    addAndMakeVisible(coarseLabel);
     addAndMakeVisible(detuneLabel);
     addAndMakeVisible(panLabel);
     addAndMakeVisible(unisonVoicesLabel);
@@ -208,6 +211,7 @@ OscillatorSectionComponent::OscillatorSectionComponent(PluginProcessor& processo
     addAndMakeVisible(waveBox);
     addAndMakeVisible(octaveSlider);
     addAndMakeVisible(levelSlider);
+    addAndMakeVisible(coarseSlider);
     addAndMakeVisible(detuneSlider);
     addAndMakeVisible(panSlider);
     addAndMakeVisible(unisonVoicesSlider);
@@ -228,7 +232,8 @@ OscillatorSectionComponent::OscillatorSectionComponent(PluginProcessor& processo
     waveLabel.setText("Wave", juce::dontSendNotification);
     octaveLabel.setText("Octave", juce::dontSendNotification);
     levelLabel.setText("Level", juce::dontSendNotification);
-    detuneLabel.setText("Tune", juce::dontSendNotification);
+    coarseLabel.setText("Coarse", juce::dontSendNotification);
+    detuneLabel.setText("Fine", juce::dontSendNotification);
     panLabel.setText("Pan", juce::dontSendNotification);
     unisonVoicesLabel.setText("Voices", juce::dontSendNotification);
     unisonDetuneLabel.setText("U Detune", juce::dontSendNotification);
@@ -237,6 +242,7 @@ OscillatorSectionComponent::OscillatorSectionComponent(PluginProcessor& processo
     styleLabel(waveLabel, 11.5f, reactorui::textMuted());
     styleLabel(octaveLabel, 11.5f, reactorui::textMuted());
     styleLabel(levelLabel, 11.5f, reactorui::textMuted(), juce::Justification::centred);
+    styleLabel(coarseLabel, 11.5f, reactorui::textMuted(), juce::Justification::centred);
     styleLabel(detuneLabel, 11.5f, reactorui::textMuted(), juce::Justification::centred);
     styleLabel(panLabel, 11.5f, reactorui::textMuted(), juce::Justification::centred);
     styleLabel(unisonVoicesLabel, 11.5f, reactorui::textMuted(), juce::Justification::centred);
@@ -264,6 +270,18 @@ OscillatorSectionComponent::OscillatorSectionComponent(PluginProcessor& processo
                             (double) text.retainCharacters("0123456789-+").getIntValue());
     };
     levelSlider.setTextValueSuffix("");
+    coarseSlider.setRange(-24.0, 24.0, 1.0);
+    coarseSlider.setNumDecimalPlacesToDisplay(0);
+    coarseSlider.setTextValueSuffix(" st");
+    coarseSlider.textFromValueFunction = [] (double value)
+    {
+        const int semitones = juce::roundToInt((float) value);
+        return juce::String(semitones > 0 ? "+" : "") + juce::String(semitones) + " st";
+    };
+    coarseSlider.valueFromTextFunction = [] (const juce::String& text)
+    {
+        return juce::jlimit(-24.0, 24.0, (double) text.retainCharacters("0123456789-+").getIntValue());
+    };
     detuneSlider.setTextValueSuffix(" ct");
     panSlider.setTextValueSuffix("");
     unisonVoicesSlider.setNumDecimalPlacesToDisplay(0);
@@ -274,6 +292,7 @@ OscillatorSectionComponent::OscillatorSectionComponent(PluginProcessor& processo
     waveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(state, prefix + "Wave", waveBox);
     octaveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(state, prefix + "Octave", octaveSlider);
     levelAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(state, prefix + "Level", levelSlider);
+    coarseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(state, prefix + "Coarse", coarseSlider);
     detuneAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(state, prefix + "Detune", detuneSlider);
     panAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(state, prefix + "Pan", panSlider);
     filterRouteAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(state, prefix + "ToFilter", filterRouteButton);
@@ -475,20 +494,23 @@ void OscillatorSectionComponent::resized()
     };
 
     const auto topCells = layoutRow(topControls, 3, 10);
-    const auto bottomCells = layoutRow(bottomControls, 2, 12);
+    const auto bottomCells = layoutRow(bottomControls, 3, 10);
 
     auto levelArea = topCells[(size_t) 0];
-    auto tuneArea = topCells[(size_t) 1];
+    auto fineArea = topCells[(size_t) 1];
     auto panArea = topCells[(size_t) 2];
-    auto voicesArea = bottomCells[(size_t) 0];
-    auto uDetuneArea = bottomCells[(size_t) 1];
+    auto coarseArea = bottomCells[(size_t) 0];
+    auto voicesArea = bottomCells[(size_t) 1];
+    auto uDetuneArea = bottomCells[(size_t) 2];
 
     levelLabel.setBounds(levelArea.removeFromTop(16));
     levelSlider.setBounds(levelArea);
-    detuneLabel.setBounds(tuneArea.removeFromTop(16));
-    detuneSlider.setBounds(tuneArea);
+    detuneLabel.setBounds(fineArea.removeFromTop(16));
+    detuneSlider.setBounds(fineArea);
     panLabel.setBounds(panArea.removeFromTop(16));
     panSlider.setBounds(panArea);
+    coarseLabel.setBounds(coarseArea.removeFromTop(16));
+    coarseSlider.setBounds(coarseArea);
     unisonVoicesLabel.setBounds(voicesArea.removeFromTop(16));
     unisonVoicesSlider.setBounds(voicesArea);
     unisonDetuneLabel.setBounds(uDetuneArea.removeFromTop(16));

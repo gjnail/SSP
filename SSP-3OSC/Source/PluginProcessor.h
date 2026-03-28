@@ -159,6 +159,7 @@ public:
     double getCurrentHostBpm() const noexcept { return currentHostBpm; }
     bool isLightThemeEnabled() const;
     void setLightThemeEnabled(bool enabled);
+    void randomizeAllParameters();
 
 private:
     struct PhaserStage

@@ -29,6 +29,7 @@ private:
     juce::Label waveLabel;
     juce::Label octaveLabel;
     juce::Label levelLabel;
+    juce::Label coarseLabel;
     juce::Label detuneLabel;
     juce::Label panLabel;
     juce::Label unisonVoicesLabel;
@@ -37,6 +38,7 @@ private:
     juce::ComboBox waveBox;
     ModulationKnob octaveSlider;
     ModulationKnob levelSlider;
+    ModulationKnob coarseSlider;
     ModulationKnob detuneSlider;
     ModulationKnob panSlider;
     ModulationKnob unisonVoicesSlider;
@@ -51,6 +53,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> waveAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> octaveAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> levelAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> coarseAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> panAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> filterRouteAttachment;

@@ -91,7 +91,19 @@ enum class Destination
     osc3Warp2,
     osc3Unison,
     fxParamStart,
-    count = fxParamStart + fxDestinationCount
+    osc1Coarse = fxParamStart + fxDestinationCount,
+    osc1WarpFM,
+    osc1WarpSync,
+    osc1WarpBend,
+    osc2Coarse,
+    osc2WarpFM,
+    osc2WarpSync,
+    osc2WarpBend,
+    osc3Coarse,
+    osc3WarpFM,
+    osc3WarpSync,
+    osc3WarpBend,
+    count
 };
 
 inline juce::String getLfoRateParamID(int lfoIndex)
@@ -189,6 +201,19 @@ inline const juce::StringArray& getDestinationNames()
             for (int parameterIndex = 0; parameterIndex < fxParameterCount; ++parameterIndex)
                 values.add("FX " + juce::String(slotIndex + 1) + " Param " + juce::String(parameterIndex + 1));
 
+        values.add("Osc 1 Coarse");
+        values.add("Osc 1 FM");
+        values.add("Osc 1 Sync");
+        values.add("Osc 1 Bend");
+        values.add("Osc 2 Coarse");
+        values.add("Osc 2 FM");
+        values.add("Osc 2 Sync");
+        values.add("Osc 2 Bend");
+        values.add("Osc 3 Coarse");
+        values.add("Osc 3 FM");
+        values.add("Osc 3 Sync");
+        values.add("Osc 3 Bend");
+
         return values;
     }();
 
@@ -199,7 +224,7 @@ inline bool isFXDestination(Destination destination) noexcept
 {
     const int index = (int) destination;
     return index >= (int) Destination::fxParamStart
-        && index < (int) Destination::count;
+        && index < (int) Destination::fxParamStart + fxDestinationCount;
 }
 
 inline Destination makeFXDestination(int slotIndex, int parameterIndex) noexcept
@@ -291,6 +316,18 @@ inline juce::String getParameterIDForDestination(Destination destination)
         case Destination::osc3Warp1:       return "osc3Warp1Amount";
         case Destination::osc3Warp2:       return "osc3Warp2Amount";
         case Destination::osc3Unison:      return "osc3Unison";
+        case Destination::osc1Coarse:      return "osc1Coarse";
+        case Destination::osc1WarpFM:      return "osc1WarpFM";
+        case Destination::osc1WarpSync:    return "osc1WarpSync";
+        case Destination::osc1WarpBend:    return "osc1WarpBend";
+        case Destination::osc2Coarse:      return "osc2Coarse";
+        case Destination::osc2WarpFM:      return "osc2WarpFM";
+        case Destination::osc2WarpSync:    return "osc2WarpSync";
+        case Destination::osc2WarpBend:    return "osc2WarpBend";
+        case Destination::osc3Coarse:      return "osc3Coarse";
+        case Destination::osc3WarpFM:      return "osc3WarpFM";
+        case Destination::osc3WarpSync:    return "osc3WarpSync";
+        case Destination::osc3WarpBend:    return "osc3WarpBend";
         case Destination::fxParamStart:
         case Destination::none:
         case Destination::count:

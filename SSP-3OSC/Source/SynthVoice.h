@@ -89,6 +89,7 @@ private:
     std::array<std::atomic<float>*, 3> oscWTPosition{};
     std::array<std::atomic<float>*, 3> oscLevel{};
     std::array<std::atomic<float>*, 3> oscOctave{};
+    std::array<std::atomic<float>*, 3> oscCoarse{};
     std::array<std::atomic<float>*, 3> oscSampleRoot{};
     std::array<std::atomic<float>*, 3> oscDetune{};
     std::array<std::atomic<float>*, 3> oscPan{};

@@ -18,6 +18,7 @@ PresetBrowserComponent::PresetBrowserComponent(PluginProcessor& p)
     addAndMakeVisible(presetBox);
     addAndMakeVisible(previousPresetButton);
     addAndMakeVisible(nextPresetButton);
+    addAndMakeVisible(randomizeAllButton);
     addAndMakeVisible(initButton);
     addAndMakeVisible(saveButton);
     addAndMakeVisible(refreshButton);
@@ -29,6 +30,12 @@ PresetBrowserComponent::PresetBrowserComponent(PluginProcessor& p)
     previousPresetButton.setTooltip("Load previous preset");
     nextPresetButton.setButtonText(">");
     nextPresetButton.setTooltip("Load next preset");
+    randomizeAllButton.setButtonText("RANDOMIZE ALL");
+    randomizeAllButton.setTooltip("Randomize the synth and FX controls");
+    randomizeAllButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff9f1d20));
+    randomizeAllButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xffc42a2e));
+    randomizeAllButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xfffff2f2));
+    randomizeAllButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xfffff2f2));
 
     initButton.setButtonText("Init");
     saveButton.setButtonText("Save Preset");
@@ -37,6 +44,11 @@ PresetBrowserComponent::PresetBrowserComponent(PluginProcessor& p)
     presetBox.onChange = [this] { handlePresetSelection(); };
     previousPresetButton.onClick = [this] { navigatePreset(-1); };
     nextPresetButton.onClick = [this] { navigatePreset(1); };
+    randomizeAllButton.onClick = [this]
+    {
+        if (onRandomizeAll)
+            onRandomizeAll();
+    };
     initButton.onClick = [this]
     {
         processor.loadBasicInitPatch();
@@ -60,7 +72,7 @@ void PresetBrowserComponent::paint(juce::Graphics& g)
 void PresetBrowserComponent::resized()
 {
     auto area = getLocalBounds().reduced(14, 12);
-    auto left = area.removeFromLeft(310);
+    auto left = area.removeFromLeft(230);
     titleLabel.setBounds(left.removeFromTop(22));
 
     area.removeFromLeft(14);
@@ -69,6 +81,8 @@ void PresetBrowserComponent::resized()
     previousPresetButton.setBounds(presetRow.removeFromLeft(32));
     presetRow.removeFromLeft(8);
     nextPresetButton.setBounds(presetRow.removeFromLeft(32));
+    presetRow.removeFromLeft(10);
+    randomizeAllButton.setBounds(presetRow.removeFromLeft(156));
     presetRow.removeFromLeft(10);
     presetBox.setBounds(presetRow);
 

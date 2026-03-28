@@ -147,6 +147,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
 
     applyKeyboardTheme(keyboardComponent);
     applyKeyboardTheme(effectsKeyboardComponent);
+    presetBrowser.onRandomizeAll = [this] { processor.randomizeAllParameters(); };
     updateThemeButton();
     setCurrentPage(Page::synth);
 }
@@ -220,10 +221,10 @@ void PluginEditor::layoutSynthPage()
     auto area = synthPage.getLocalBounds();
 
     constexpr int minTopRowHeight = 530;
-    constexpr int warpHeight = 324;
+    constexpr int warpHeight = 378;
     constexpr int envRowHeight = 236;
     constexpr int lfoHeight = 540;
-    constexpr int sourceColumnWidth = 292;
+    constexpr int sourceColumnWidth = 356;
     constexpr int keyboardHeight = 60;
     constexpr int oscGap = 14;
     constexpr int utilityGap = 10;

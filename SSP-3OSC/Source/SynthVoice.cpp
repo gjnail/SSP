@@ -87,11 +87,15 @@ struct ModulationState
     float masterSpread = 0.0f;
     float masterGain = 0.0f;
     std::array<float, 3> oscLevel{};
+    std::array<float, 3> oscCoarse{};
     std::array<float, 3> oscDetune{};
     std::array<float, 3> oscPan{};
     std::array<float, 3> oscWTPos{};
     std::array<float, 3> oscWarp1{};
     std::array<float, 3> oscWarp2{};
+    std::array<float, 3> oscWarpFM{};
+    std::array<float, 3> oscWarpSync{};
+    std::array<float, 3> oscWarpBend{};
     std::array<float, 3> oscUnison{};
 };
 
@@ -119,23 +123,35 @@ void applyDestination(ModulationState& state, reactormod::Destination destinatio
         case reactormod::Destination::masterSpread:      state.masterSpread += value * 1.0f; break;
         case reactormod::Destination::masterGain:        state.masterGain += value * 1.0f; break;
         case reactormod::Destination::osc1Level:         state.oscLevel[0] += value * 1.0f; break;
+        case reactormod::Destination::osc1Coarse:        state.oscCoarse[0] += value * 24.0f; break;
         case reactormod::Destination::osc1Detune:        state.oscDetune[0] += value * 48.0f; break;
         case reactormod::Destination::osc1Pan:           state.oscPan[0] += value * 2.0f; break;
         case reactormod::Destination::osc1WTPos:         state.oscWTPos[0] += value * 1.0f; break;
+        case reactormod::Destination::osc1WarpFM:        state.oscWarpFM[0] += value * 1.0f; break;
+        case reactormod::Destination::osc1WarpSync:      state.oscWarpSync[0] += value * 1.0f; break;
+        case reactormod::Destination::osc1WarpBend:      state.oscWarpBend[0] += value * 1.0f; break;
         case reactormod::Destination::osc1Warp1:         state.oscWarp1[0] += value * 1.0f; break;
         case reactormod::Destination::osc1Warp2:         state.oscWarp2[0] += value * 1.0f; break;
         case reactormod::Destination::osc1Unison:        state.oscUnison[0] += value * 1.0f; break;
         case reactormod::Destination::osc2Level:         state.oscLevel[1] += value * 1.0f; break;
+        case reactormod::Destination::osc2Coarse:        state.oscCoarse[1] += value * 24.0f; break;
         case reactormod::Destination::osc2Detune:        state.oscDetune[1] += value * 48.0f; break;
         case reactormod::Destination::osc2Pan:           state.oscPan[1] += value * 2.0f; break;
         case reactormod::Destination::osc2WTPos:         state.oscWTPos[1] += value * 1.0f; break;
+        case reactormod::Destination::osc2WarpFM:        state.oscWarpFM[1] += value * 1.0f; break;
+        case reactormod::Destination::osc2WarpSync:      state.oscWarpSync[1] += value * 1.0f; break;
+        case reactormod::Destination::osc2WarpBend:      state.oscWarpBend[1] += value * 1.0f; break;
         case reactormod::Destination::osc2Warp1:         state.oscWarp1[1] += value * 1.0f; break;
         case reactormod::Destination::osc2Warp2:         state.oscWarp2[1] += value * 1.0f; break;
         case reactormod::Destination::osc2Unison:        state.oscUnison[1] += value * 1.0f; break;
         case reactormod::Destination::osc3Level:         state.oscLevel[2] += value * 1.0f; break;
+        case reactormod::Destination::osc3Coarse:        state.oscCoarse[2] += value * 24.0f; break;
         case reactormod::Destination::osc3Detune:        state.oscDetune[2] += value * 48.0f; break;
         case reactormod::Destination::osc3Pan:           state.oscPan[2] += value * 2.0f; break;
         case reactormod::Destination::osc3WTPos:         state.oscWTPos[2] += value * 1.0f; break;
+        case reactormod::Destination::osc3WarpFM:        state.oscWarpFM[2] += value * 1.0f; break;
+        case reactormod::Destination::osc3WarpSync:      state.oscWarpSync[2] += value * 1.0f; break;
+        case reactormod::Destination::osc3WarpBend:      state.oscWarpBend[2] += value * 1.0f; break;
         case reactormod::Destination::osc3Warp1:         state.oscWarp1[2] += value * 1.0f; break;
         case reactormod::Destination::osc3Warp2:         state.oscWarp2[2] += value * 1.0f; break;
         case reactormod::Destination::osc3Unison:        state.oscUnison[2] += value * 1.0f; break;
@@ -159,6 +175,7 @@ SynthVoice::SynthVoice(PluginProcessor& p)
         oscWTPosition[(size_t) i] = processor.apvts.getRawParameterValue(prefix + "WTPos");
         oscLevel[(size_t) i] = processor.apvts.getRawParameterValue(prefix + "Level");
         oscOctave[(size_t) i] = processor.apvts.getRawParameterValue(prefix + "Octave");
+        oscCoarse[(size_t) i] = processor.apvts.getRawParameterValue(prefix + "Coarse");
         oscSampleRoot[(size_t) i] = processor.apvts.getRawParameterValue(prefix + "SampleRoot");
         oscDetune[(size_t) i] = processor.apvts.getRawParameterValue(prefix + "Detune");
         oscPan[(size_t) i] = processor.apvts.getRawParameterValue(prefix + "Pan");
@@ -1046,6 +1063,9 @@ void SynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int sta
             const float level = juce::jlimit(0.0f, 1.0f, oscLevel[(size_t) osc]->load() + modulation.oscLevel[(size_t) osc]);
             const int octaveIndex = juce::jlimit(0, 4, juce::roundToInt(oscOctave[(size_t) osc]->load()));
             const float octaveShift = octaveOffsets[(size_t) octaveIndex];
+            const float coarseSemitones = juce::jlimit(-24.0f, 24.0f,
+                                                       (oscCoarse[(size_t) osc] != nullptr ? oscCoarse[(size_t) osc]->load() : 0.0f)
+                                                       + modulation.oscCoarse[(size_t) osc]);
             const float detuneCents = oscDetune[(size_t) osc]->load() + modulation.oscDetune[(size_t) osc];
             const float oscBasePan = juce::jlimit(-1.0f, 1.0f,
                                                   (oscPan[(size_t) osc] != nullptr ? oscPan[(size_t) osc]->load() : 0.0f)
@@ -1061,8 +1081,22 @@ void SynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int sta
                 juce::jlimit(0.0f, 1.0f, oscWarpAmount[(size_t) osc][0]->load() + modulation.oscWarp1[(size_t) osc]),
                 juce::jlimit(0.0f, 1.0f, oscWarpAmount[(size_t) osc][1]->load() + modulation.oscWarp2[(size_t) osc])
             }};
+            const float legacyWarpFM = juce::jlimit(0.0f, 1.0f,
+                                                    (oscWarpFM[(size_t) osc] != nullptr ? oscWarpFM[(size_t) osc]->load() : 0.0f)
+                                                    + modulation.oscWarpFM[(size_t) osc]);
+            const float legacyWarpSync = juce::jlimit(0.0f, 1.0f,
+                                                      (oscWarpSync[(size_t) osc] != nullptr ? oscWarpSync[(size_t) osc]->load() : 0.0f)
+                                                      + modulation.oscWarpSync[(size_t) osc]);
+            const float legacyWarpBend = juce::jlimit(0.0f, 1.0f,
+                                                      (oscWarpBend[(size_t) osc] != nullptr ? oscWarpBend[(size_t) osc]->load() : 0.0f)
+                                                      + modulation.oscWarpBend[(size_t) osc]);
             const int voiceCount = unisonEnabled ? selectedVoices : 1;
-            const float baseFrequency = currentNoteFrequency * pitchBendRatio * pitchModRatio * std::pow(2.0f, octaveShift) * std::pow(2.0f, detuneCents / 1200.0f);
+            const float baseFrequency = currentNoteFrequency
+                                      * pitchBendRatio
+                                      * pitchModRatio
+                                      * std::pow(2.0f, octaveShift)
+                                      * std::pow(2.0f, coarseSemitones / 12.0f)
+                                      * std::pow(2.0f, detuneCents / 1200.0f);
             const float maxSpreadCents = 4.0f + unisonAmount * 34.0f;
             const float voiceGain = level / std::sqrt((float) voiceCount);
 
@@ -1079,6 +1113,7 @@ void SynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int sta
                     {
                         const float playbackNote = currentNoteNumber
                                                  + octaveShift * 12.0f
+                                                 + coarseSemitones
                                                  + (detuneCents + unisonDetuneCents) / 100.0f
                                                  + pitchBendSemitones
                                                  + pitchVibratoSemitones;
@@ -1094,6 +1129,12 @@ void SynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int sta
                             samplePosition += sampleLength;
 
                         float warpedPhase = (float) (samplePosition / sampleLength);
+                        warpedPhase = applyWarpMode(osc, voice, warpedPhase, 1, legacyWarpFM,
+                                                    baseNoiseSample, lfo, mutateAmount, wavetablePositions);
+                        warpedPhase = applyWarpMode(osc, voice, warpedPhase, 2, legacyWarpSync,
+                                                    baseNoiseSample, lfo, mutateAmount, wavetablePositions);
+                        warpedPhase = applyWarpMode(osc, voice, warpedPhase, 3, legacyWarpBend,
+                                                    baseNoiseSample, lfo, mutateAmount, wavetablePositions);
                         for (int slot = 0; slot < 2; ++slot)
                         {
                             const int modeIndex = juce::roundToInt(oscWarpMode[(size_t) osc][(size_t) slot]->load());
@@ -1125,6 +1166,12 @@ void SynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int sta
                     phase = wrapPhase(phase + phaseIncrement);
 
                     float warpedPhase = phase;
+                    warpedPhase = applyWarpMode(osc, voice, warpedPhase, 1, legacyWarpFM,
+                                                baseNoiseSample, lfo, mutateAmount, wavetablePositions);
+                    warpedPhase = applyWarpMode(osc, voice, warpedPhase, 2, legacyWarpSync,
+                                                baseNoiseSample, lfo, mutateAmount, wavetablePositions);
+                    warpedPhase = applyWarpMode(osc, voice, warpedPhase, 3, legacyWarpBend,
+                                                baseNoiseSample, lfo, mutateAmount, wavetablePositions);
                     for (int slot = 0; slot < 2; ++slot)
                     {
                         const int modeIndex = juce::roundToInt(oscWarpMode[(size_t) osc][(size_t) slot]->load());

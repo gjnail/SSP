@@ -144,11 +144,11 @@ void SubOscSectionComponent::resized()
     juce::ignoreUnused(previewArea);
     area.removeFromTop(8);
 
-    auto topRow = area.removeFromTop(24);
-    waveLabel.setBounds(topRow.removeFromLeft(34));
-    topRow.removeFromLeft(6);
-    waveBox.setBounds(topRow.removeFromLeft(110));
-    topRow.removeFromLeft(10);
+    auto topRow = area.removeFromTop(26);
+    waveLabel.setBounds(topRow.removeFromLeft(42));
+    topRow.removeFromLeft(8);
+    waveBox.setBounds(topRow.removeFromLeft(118));
+    topRow.removeFromLeft(12);
     directOutButton.setBounds(topRow);
 
     area.removeFromTop(8);

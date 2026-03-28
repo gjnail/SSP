@@ -27,6 +27,13 @@ private:
     ModulationKnob octaveSlider;
     std::atomic<float>* tableParam = nullptr;
     std::atomic<float>* positionParam = nullptr;
+    std::atomic<float>* mutateParam = nullptr;
+    std::atomic<float>* fmSourceParam = nullptr;
+    std::array<std::atomic<float>*, 2> warpModeParams{};
+    std::array<std::atomic<float>*, 2> warpAmountParams{};
+    std::atomic<float>* warpFMParam = nullptr;
+    std::atomic<float>* warpSyncParam = nullptr;
+    std::atomic<float>* warpBendParam = nullptr;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tableAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> octaveAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> positionAttachment;

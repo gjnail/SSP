@@ -18,6 +18,44 @@ constexpr const char* themeModePropertyID = "uiThemeMode";
 constexpr const char* themeModeDark = "dark";
 constexpr const char* themeModeLight = "light";
 
+bool shouldRandomizeParameterID(const juce::String& parameterID)
+{
+    if (parameterID.isEmpty())
+        return false;
+
+    return ! parameterID.startsWith("modSlot");
+}
+
+reactormod::DynamicLfoData makeRandomizedLfoData(int lfoIndex, juce::Random& random)
+{
+    auto data = reactormod::makeDefaultLfo(lfoIndex + 1);
+    data.name = "LFO " + juce::String(lfoIndex + 1);
+    data.syncEnabled = random.nextBool();
+    data.dotted = data.syncEnabled && random.nextBool();
+    data.syncDivisionIndex = random.nextInt(juce::jmax(1, reactormod::getSyncDivisionNames().size()));
+    data.rateHz = juce::jmap(random.nextFloat(), 0.05f, 20.0f);
+    data.triggerMode = static_cast<reactormod::TriggerMode>(random.nextInt(reactormod::getTriggerModeNames().size()));
+    data.type = static_cast<reactormod::LfoType>(random.nextInt(reactormod::getLfoTypeNames().size()));
+
+    if (data.type == reactormod::LfoType::shape)
+    {
+        const int nodeCount = 4 + random.nextInt(4);
+        data.nodes.clear();
+        data.nodes.reserve((size_t) nodeCount);
+
+        for (int nodeIndex = 0; nodeIndex < nodeCount; ++nodeIndex)
+        {
+            reactormod::LfoNode node;
+            node.x = nodeCount > 1 ? (float) nodeIndex / (float) (nodeCount - 1) : 0.0f;
+            node.y = juce::jmap(random.nextFloat(), 0.05f, 0.95f);
+            node.curveToNext = nodeIndex + 1 < nodeCount ? juce::jmap(random.nextFloat(), -0.8f, 0.8f) : 0.0f;
+            data.nodes.push_back(node);
+        }
+    }
+
+    return data;
+}
+
 bool setParameterPlain(juce::AudioProcessorValueTreeState& apvts, const juce::String& id, float plainValue)
 {
     if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(id)))
@@ -953,6 +991,7 @@ void setOscillator(juce::AudioProcessorValueTreeState& apvts,
     setParameterPlain(apvts, prefix + "Wavetable", 0.0f);
     setParameterPlain(apvts, prefix + "WTPos", 0.0f);
     setParameterPlain(apvts, prefix + "Octave", (float) octave);
+    setParameterPlain(apvts, prefix + "Coarse", 0.0f);
     setParameterPlain(apvts, prefix + "SampleRoot", 60.0f);
     setParameterPlain(apvts, prefix + "Level", level);
     setParameterPlain(apvts, prefix + "Detune", detune);
@@ -2054,6 +2093,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
                                                                  juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f),
                                                                  osc == 1 ? 0.65f : osc == 2 ? 0.35f : 0.25f)));
         params.push_back(makeParam(new juce::AudioParameterChoice(prefix + "Octave", prefix + " Octave", getOctaveNames(), osc == 3 ? 1 : 2)));
+        params.push_back(makeParam(new juce::AudioParameterInt(prefix + "Coarse", prefix + " Coarse", -24, 24, 0)));
         params.push_back(makeParam(new juce::AudioParameterInt(prefix + "SampleRoot", prefix + " Sample Root", 12, 127, 60)));
         params.push_back(makeParam(new juce::AudioParameterFloat(prefix + "Detune", prefix + " Detune",
                                                                  juce::NormalisableRange<float>(-24.0f, 24.0f, 0.01f),
@@ -2952,6 +2992,41 @@ void PluginProcessor::setLightThemeEnabled(bool enabled)
 {
     apvts.state.setProperty(themeModePropertyID, enabled ? themeModeLight : themeModeDark, nullptr);
     applyStoredThemeMode();
+}
+
+void PluginProcessor::randomizeAllParameters()
+{
+    juce::Random random((juce::int64) juce::Time::currentTimeMillis());
+
+    for (auto* parameter : getParameters())
+    {
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter);
+        auto* parameterWithID = dynamic_cast<juce::AudioProcessorParameterWithID*>(parameter);
+        if (ranged == nullptr || parameterWithID == nullptr)
+            continue;
+
+        if (ranged->isMetaParameter() || ! shouldRandomizeParameterID(parameterWithID->paramID))
+            continue;
+
+        float normalizedValue = random.nextFloat();
+        if (ranged->isBoolean())
+        {
+            normalizedValue = random.nextBool() ? 1.0f : 0.0f;
+        }
+        else if (ranged->isDiscrete())
+        {
+            const int steps = juce::jmax(2, ranged->getNumSteps());
+            normalizedValue = (float) random.nextInt(steps) / (float) (steps - 1);
+        }
+
+        ranged->beginChangeGesture();
+        ranged->setValueNotifyingHost(normalizedValue);
+        ranged->endChangeGesture();
+    }
+
+    const int lfoCount = getModulationLfoCount();
+    for (int i = 0; i < lfoCount; ++i)
+        updateModulationLfo(i, makeRandomizedLfoData(i, random));
 }
 
 void PluginProcessor::applyStoredThemeMode()

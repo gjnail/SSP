@@ -29,6 +29,8 @@ private:
     std::array<juce::Label, 3> oscTitleLabels;
     std::array<juce::Label, 3> fmSourceLabels;
     std::array<juce::ComboBox, 3> fmSourceBoxes;
+    std::array<std::array<juce::Label, 3>, 3> legacyWarpLabels;
+    std::array<std::array<std::unique_ptr<ModulationKnob>, 3>, 3> legacyWarpSliders;
     std::array<std::array<juce::Label, 2>, 3> warpSlotLabels;
     std::array<std::array<juce::ComboBox, 2>, 3> warpModeBoxes;
     std::array<std::array<std::unique_ptr<ModulationKnob>, 2>, 3> warpAmountSliders;
@@ -36,6 +38,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> saturatorAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mutateAttachment;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>, 3> fmSourceAttachments;
+    std::array<std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 3>, 3> legacyWarpAttachments;
     std::array<std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>, 2>, 3> warpModeAttachments;
     std::array<std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 2>, 3> warpAmountAttachments;
 

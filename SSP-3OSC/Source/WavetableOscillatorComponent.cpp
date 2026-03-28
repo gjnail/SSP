@@ -1,4 +1,5 @@
 #include "WavetableOscillatorComponent.h"
+#include "PreviewWarpUtils.h"
 #include "ReactorUI.h"
 #include "WavetableLibrary.h"
 
@@ -87,6 +88,15 @@ WavetableOscillatorComponent::WavetableOscillatorComponent(PluginProcessor& proc
     positionAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(state, prefix + "WTPos", positionSlider);
     tableParam = state.getRawParameterValue(prefix + "Wavetable");
     positionParam = state.getRawParameterValue(prefix + "WTPos");
+    mutateParam = state.getRawParameterValue("warpMutate");
+    fmSourceParam = state.getRawParameterValue(prefix + "WarpFMSource");
+    warpModeParams[0] = state.getRawParameterValue(prefix + "Warp1Mode");
+    warpModeParams[1] = state.getRawParameterValue(prefix + "Warp2Mode");
+    warpAmountParams[0] = state.getRawParameterValue(prefix + "Warp1Amount");
+    warpAmountParams[1] = state.getRawParameterValue(prefix + "Warp2Amount");
+    warpFMParam = state.getRawParameterValue(prefix + "WarpFM");
+    warpSyncParam = state.getRawParameterValue(prefix + "WarpSync");
+    warpBendParam = state.getRawParameterValue(prefix + "WarpBend");
 
     startTimerHz(20);
 }
@@ -101,6 +111,11 @@ void WavetableOscillatorComponent::paint(juce::Graphics& g)
 
     const int tableIndex = tableParam != nullptr ? juce::roundToInt(tableParam->load()) : 0;
     const float position = positionParam != nullptr ? positionParam->load() : 0.0f;
+    const float mutateAmount = mutateParam != nullptr ? mutateParam->load() : 0.0f;
+    const int fmSourceIndex = fmSourceParam != nullptr ? juce::roundToInt(fmSourceParam->load()) : 0;
+    const float legacyFM = warpFMParam != nullptr ? warpFMParam->load() : 0.0f;
+    const float legacySync = warpSyncParam != nullptr ? warpSyncParam->load() : 0.0f;
+    const float legacyBend = warpBendParam != nullptr ? warpBendParam->load() : 0.0f;
     const float centreY = preview.getCentreY();
     const float amplitude = preview.getHeight() * 0.40f;
     const int width = juce::jmax(1, (int) preview.getWidth());
@@ -109,7 +124,23 @@ void WavetableOscillatorComponent::paint(juce::Graphics& g)
     for (int x = 0; x < width; ++x)
     {
         const float phase = (float) x / (float) juce::jmax(1, width - 1);
-        const float sample = wavetable::renderSample(tableIndex, position, phase);
+        float warpedPhase = previewwarp::applyLegacyWarp(phase, legacyFM, legacySync, legacyBend, fmSourceIndex, mutateAmount);
+        for (int slot = 0; slot < 2; ++slot)
+        {
+            const int modeIndex = warpModeParams[(size_t) slot] != nullptr ? juce::roundToInt(warpModeParams[(size_t) slot]->load()) : 0;
+            const float amount = warpAmountParams[(size_t) slot] != nullptr ? warpAmountParams[(size_t) slot]->load() : 0.0f;
+            warpedPhase = previewwarp::applyWarpMode(warpedPhase, modeIndex, amount, fmSourceIndex, mutateAmount);
+        }
+
+        float sample = wavetable::renderSample(tableIndex, position, previewwarp::wrapPhase(warpedPhase));
+        if (mutateAmount > 0.0001f)
+        {
+            const float harmonicPhase = previewwarp::wrapPhase(warpedPhase + 0.11f * mutateAmount
+                * std::sin(juce::MathConstants<float>::twoPi * warpedPhase * (2.0f + (float) oscIndex)));
+            const float harmonic = wavetable::renderSample(tableIndex, position, harmonicPhase);
+            const float folded = std::sin((sample + harmonic * 0.45f) * (1.0f + mutateAmount * 4.5f));
+            sample = juce::jlimit(-1.0f, 1.0f, juce::jmap(mutateAmount, sample, folded));
+        }
         const float drawX = preview.getX() + (float) x;
         const float drawY = centreY - sample * amplitude;
         if (x == 0)

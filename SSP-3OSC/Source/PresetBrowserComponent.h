@@ -12,6 +12,8 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    std::function<void()> onRandomizeAll;
+
 private:
     void rebuildPresetList();
     void handlePresetSelection();
@@ -26,6 +28,7 @@ private:
     juce::ComboBox presetBox;
     juce::TextButton previousPresetButton;
     juce::TextButton nextPresetButton;
+    juce::TextButton randomizeAllButton;
     juce::TextButton initButton;
     juce::TextButton saveButton;
     juce::TextButton refreshButton;

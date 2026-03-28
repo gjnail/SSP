@@ -3,11 +3,14 @@
 
 namespace
 {
+constexpr float filterPreviewTopOffset = 20.0f;
+constexpr float filterPreviewHeight = 176.0f;
+
 juce::Rectangle<float> getFilterPreviewBounds(juce::Rectangle<int> bounds)
 {
     auto area = bounds.reduced(14).toFloat();
-    area.removeFromTop(36.0f);
-    return area.removeFromTop(48.0f);
+    area.removeFromTop(filterPreviewTopOffset);
+    return area.removeFromTop(filterPreviewHeight);
 }
 
 void styleLabel(juce::Label& label, float size, juce::Colour colour, juce::Justification justification = juce::Justification::centredLeft)
@@ -292,12 +295,13 @@ void FilterSectionComponent::resized()
     auto titleRow = area.removeFromTop(24);
     titleLabel.setBounds(titleRow.removeFromLeft(110));
     filterOnButton.setBounds(titleRow.removeFromRight(62));
-    area.removeFromTop(56);
+    area.removeFromTop((int) filterPreviewHeight + 8);
     area.removeFromTop(6);
 
-    auto topRow = area.removeFromTop(38);
+    auto topRow = area.removeFromTop(50);
     modeLabel.setBounds(topRow.removeFromTop(16));
-    modeBox.setBounds(topRow.removeFromTop(22));
+    topRow.removeFromTop(2);
+    modeBox.setBounds(topRow.removeFromTop(30));
 
     area.removeFromTop(8);
     const int gap = 10;
