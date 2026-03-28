@@ -976,10 +976,29 @@ void SynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int sta
             if (std::abs(amount) <= 0.0001f)
                 continue;
 
-            if (! juce::isPositiveAndBelow(sourceIndex - 1, (int) lfoValues.size()))
-                continue;
+            float sourceValue = 0.0f;
+            if (reactormod::isLfoSourceIndex(sourceIndex))
+            {
+                const int lfoIndex = reactormod::lfoNumberForSourceIndex(sourceIndex) - 1;
+                if (! juce::isPositiveAndBelow(lfoIndex, (int) lfoValues.size()))
+                    continue;
 
-            applyDestination(modulation, destination, lfoValues[(size_t) (sourceIndex - 1)] * amount);
+                sourceValue = lfoValues[(size_t) lfoIndex];
+            }
+            else if (reactormod::isMacroSourceIndex(sourceIndex))
+            {
+                const int macroIndex = reactormod::macroNumberForSourceIndex(sourceIndex) - 1;
+                if (! juce::isPositiveAndBelow(macroIndex, (int) modulationSnapshot.macroValues.size()))
+                    continue;
+
+                sourceValue = juce::jlimit(0.0f, 1.0f, modulationSnapshot.macroValues[(size_t) macroIndex]);
+            }
+            else
+            {
+                continue;
+            }
+
+            applyDestination(modulation, destination, sourceValue * amount);
         }
 
         adsrParameters.attack = juce::jlimit(0.001f, 5.0f, ampAttack->load() + modulation.ampAttack);

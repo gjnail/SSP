@@ -9,6 +9,9 @@ namespace reactormod
 constexpr int lfoCount = 4;
 constexpr int lfoPointCount = 4;
 constexpr int matrixSlotCount = 64;
+constexpr int maxLfoSourceCount = 128;
+constexpr int macroSourceCount = 6;
+constexpr int maxModulationSourceCount = maxLfoSourceCount + macroSourceCount;
 constexpr int fxSlotCount = 9;
 constexpr int fxParameterCount = 12;
 constexpr int fxDestinationCount = fxSlotCount * fxParameterCount;
@@ -134,14 +137,87 @@ inline juce::String getMatrixAmountParamID(int slotIndex)
     return "modSlot" + juce::String(slotIndex) + "Amount";
 }
 
+inline juce::String getMacroParamID(int macroIndex)
+{
+    return "macro" + juce::String(macroIndex);
+}
+
+inline bool isLfoSourceIndex(int sourceIndex) noexcept
+{
+    return sourceIndex >= 1 && sourceIndex <= maxLfoSourceCount;
+}
+
+inline bool isMacroSourceIndex(int sourceIndex) noexcept
+{
+    return sourceIndex > maxLfoSourceCount && sourceIndex <= maxModulationSourceCount;
+}
+
+inline int sourceIndexForLfo(int lfoNumber) noexcept
+{
+    return juce::isPositiveAndBelow(lfoNumber - 1, maxLfoSourceCount) ? lfoNumber : 0;
+}
+
+inline int sourceIndexForMacro(int macroNumber) noexcept
+{
+    return juce::isPositiveAndBelow(macroNumber - 1, macroSourceCount) ? maxLfoSourceCount + macroNumber : 0;
+}
+
+inline int lfoNumberForSourceIndex(int sourceIndex) noexcept
+{
+    return isLfoSourceIndex(sourceIndex) ? sourceIndex : 0;
+}
+
+inline int macroNumberForSourceIndex(int sourceIndex) noexcept
+{
+    return isMacroSourceIndex(sourceIndex) ? sourceIndex - maxLfoSourceCount : 0;
+}
+
+inline juce::String getSourceNameForIndex(int sourceIndex)
+{
+    if (isMacroSourceIndex(sourceIndex))
+        return "MOD " + juce::String(macroNumberForSourceIndex(sourceIndex));
+
+    if (isLfoSourceIndex(sourceIndex))
+        return "LFO " + juce::String(lfoNumberForSourceIndex(sourceIndex));
+
+    return "Off";
+}
+
+inline juce::String getSourceDragDescription(int sourceIndex)
+{
+    if (sourceIndex <= 0)
+        return {};
+
+    return "MODSOURCE:" + juce::String(juce::jlimit(1, maxModulationSourceCount, sourceIndex));
+}
+
+inline int sourceIndexFromDragDescription(const juce::String& description) noexcept
+{
+    if (description.startsWith("MODSOURCE:"))
+        return juce::jlimit(0, maxModulationSourceCount, description.fromFirstOccurrenceOf(":", false, false).getIntValue());
+
+    if (description.startsWith("LFO:"))
+        return juce::jlimit(0, maxLfoSourceCount, description.fromFirstOccurrenceOf(":", false, false).getIntValue());
+
+    if (description.startsWith("MOD:"))
+        return sourceIndexForMacro(description.fromFirstOccurrenceOf(":", false, false).getIntValue());
+
+    return 0;
+}
+
+inline bool isModulationSourceDragDescription(const juce::String& description) noexcept
+{
+    return sourceIndexFromDragDescription(description) > 0;
+}
+
 inline const juce::StringArray& getSourceNames()
 {
     static const juce::StringArray names = []
     {
         juce::StringArray values;
         values.add("Off");
-        for (int i = 1; i <= 128; ++i)
-            values.add("LFO " + juce::String(i));
+        for (int i = 1; i <= maxModulationSourceCount; ++i)
+            values.add(getSourceNameForIndex(i));
         return values;
     }();
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "ModulationConfig.h"
 
 namespace reactorui
 {
@@ -38,7 +39,7 @@ inline juce::Colour controlInset()    { return isLightTheme() ? juce::Colour(0xf
 
 inline juce::Colour modulationSourceColour(int sourceIndex)
 {
-    static const std::array<juce::Colour, 8> colours{{
+    static const std::array<juce::Colour, 8> lfoColours{{
         brandCyan(),
         brandGold(),
         juce::Colour(0xff8bff9c),
@@ -49,10 +50,22 @@ inline juce::Colour modulationSourceColour(int sourceIndex)
         juce::Colour(0xff9cc4ff)
     }};
 
+    static const std::array<juce::Colour, 6> macroColours{{
+        juce::Colour(0xffff8b3d),
+        juce::Colour(0xffffa347),
+        juce::Colour(0xffff7a32),
+        juce::Colour(0xffffb15b),
+        juce::Colour(0xffff9151),
+        juce::Colour(0xffffa86a)
+    }};
+
     if (sourceIndex <= 0)
         return brandCyan();
 
-    return colours[(size_t) ((sourceIndex - 1) % (int) colours.size())];
+    if (reactormod::isMacroSourceIndex(sourceIndex))
+        return macroColours[(size_t) ((reactormod::macroNumberForSourceIndex(sourceIndex) - 1) % (int) macroColours.size())];
+
+    return lfoColours[(size_t) ((reactormod::lfoNumberForSourceIndex(sourceIndex) - 1) % (int) lfoColours.size())];
 }
 
 inline juce::Font headerFont(float size)  { return juce::Font(size * headerFontScale, juce::Font::bold); }

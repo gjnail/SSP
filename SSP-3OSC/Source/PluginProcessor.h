@@ -29,8 +29,15 @@ public:
     struct ModulationSnapshot
     {
         std::vector<reactormod::DynamicLfoData> lfos;
+        std::array<float, reactormod::macroSourceCount> macroValues{};
         std::array<int, reactormod::matrixSlotCount> matrixSources{};
         std::array<bool, reactormod::matrixSlotCount> matrixEnabled{};
+    };
+
+    struct ModulationSourceInfo
+    {
+        int sourceIndex = 0;
+        juce::String name;
     };
 
     struct DestinationModulationInfo
@@ -144,17 +151,23 @@ public:
     ModulationSnapshot getModulationSnapshot() const;
     int getModulationLfoCount() const;
     reactormod::DynamicLfoData getModulationLfo(int index) const;
+    std::vector<ModulationSourceInfo> getAvailableModulationSources() const;
     juce::StringArray getModulationLfoNames() const;
     float getModulationLfoDisplayPhase(int index) const;
     int addModulationLfo();
     void updateModulationLfo(int index, const reactormod::DynamicLfoData& data);
     int getMatrixSourceForSlot(int slotIndex) const;
     void setMatrixSourceForSlot(int slotIndex, int sourceIndex);
-    DestinationModulationInfo getDestinationModulationInfo(reactormod::Destination destination) const;
+    int getSelectedModulationSourceIndex() const noexcept;
+    void setSelectedModulationSourceIndex(int sourceIndex) noexcept;
+    DestinationModulationInfo getDestinationModulationInfo(reactormod::Destination destination,
+                                                           int preferredSourceIndex = 0) const;
+    std::vector<ModulationRouteInfo> getRoutesForSource(int sourceIndex) const;
     std::vector<ModulationRouteInfo> getRoutesForLfo(int lfoIndex) const;
     void setMatrixSlotEnabled(int slotIndex, bool enabled);
     void setMatrixAmountForSlot(int slotIndex, float amount);
     void removeMatrixSlot(int slotIndex);
+    int assignSourceToDestination(int sourceIndex, reactormod::Destination destination, float defaultAmount = 1.0f);
     int assignLfoToDestination(int sourceIndex, reactormod::Destination destination, float defaultAmount = 1.0f);
     double getCurrentHostBpm() const noexcept { return currentHostBpm; }
     bool isLightThemeEnabled() const;
@@ -306,6 +319,7 @@ private:
     std::array<std::atomic<float>, 128> modulationDisplayPhases{};
     std::array<bool, 128> modulationDisplayOneShotFinished{};
     std::array<bool, 128> modulationHeldNotes{};
+    std::atomic<int> selectedModulationSourceIndex { 1 };
     int modulationHeldNoteCount = 0;
 
     void updateVoiceConfiguration();

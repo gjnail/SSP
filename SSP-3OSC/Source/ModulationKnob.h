@@ -39,10 +39,11 @@ public:
     void paintOverChildren(juce::Graphics& g) override;
 
     void refreshModulationState();
+    std::function<void()> onPrimaryInteract;
 
 private:
     void timerCallback() override;
-    bool isLfoDragDescription(const juce::var& description) const;
+    bool isModulationSourceDragDescription(const juce::var& description) const;
     int sourceIndexFromDescription(const juce::var& description) const;
     juce::Rectangle<float> getKnobBounds() const;
     juce::Rectangle<float> getTargetChipBounds() const;

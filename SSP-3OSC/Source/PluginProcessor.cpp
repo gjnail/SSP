@@ -80,6 +80,29 @@ float readParameterPlain(const juce::AudioProcessorValueTreeState& apvts, const 
     return fallback;
 }
 
+float getModulationSourceValue(int sourceIndex,
+                               const std::vector<float>& lfoValues,
+                               const std::array<float, reactormod::macroSourceCount>& macroValues) noexcept
+{
+    if (reactormod::isLfoSourceIndex(sourceIndex))
+    {
+        const int lfoIndex = reactormod::lfoNumberForSourceIndex(sourceIndex) - 1;
+        if (juce::isPositiveAndBelow(lfoIndex, (int) lfoValues.size()))
+            return lfoValues[(size_t) lfoIndex];
+
+        return 0.0f;
+    }
+
+    if (reactormod::isMacroSourceIndex(sourceIndex))
+    {
+        const int macroIndex = reactormod::macroNumberForSourceIndex(sourceIndex) - 1;
+        if (juce::isPositiveAndBelow(macroIndex, (int) macroValues.size()))
+            return juce::jlimit(0.0f, 1.0f, macroValues[(size_t) macroIndex]);
+    }
+
+    return 0.0f;
+}
+
 float midiNoteToFrequency(int midiNote)
 {
     return (float) juce::MidiMessage::getMidiNoteInHertz(juce::jlimit(0, 127, midiNote));
@@ -2183,6 +2206,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
                                                              juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f),
                                                              0.0f)));
 
+    for (int macro = 1; macro <= reactormod::macroSourceCount; ++macro)
+    {
+        params.push_back(makeParam(new juce::AudioParameterFloat(reactormod::getMacroParamID(macro),
+                                                                 "Macro " + juce::String(macro),
+                                                                 juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f),
+                                                                 0.0f)));
+    }
+
     for (int lfo = 2; lfo <= reactormod::lfoCount; ++lfo)
     {
         params.push_back(makeParam(new juce::AudioParameterFloat(reactormod::getLfoRateParamID(lfo),
@@ -3104,7 +3135,7 @@ void PluginProcessor::initialiseModulationState(bool forceLegacyMatrix)
                 const int slotIndex = juce::jlimit(1, reactormod::matrixSlotCount,
                                                    (int) slotNode.getProperty(matrixSlotIndexProperty, i + 1));
                 matrixSourceIndices[(size_t) (slotIndex - 1)] =
-                    juce::jmax(0, (int) slotNode.getProperty(matrixSourceProperty, 0));
+                    juce::jlimit(0, reactormod::maxModulationSourceCount, (int) slotNode.getProperty(matrixSourceProperty, 0));
                 matrixSlotEnableds[(size_t) (slotIndex - 1)] =
                     (bool) slotNode.getProperty(matrixEnabledProperty, matrixSourceIndices[(size_t) (slotIndex - 1)] > 0);
             }
@@ -3134,7 +3165,9 @@ void PluginProcessor::initialiseModulationState(bool forceLegacyMatrix)
         {
             setMatrixSlot(apvts, slot, 0, reactormod::Destination::none, 0.0f);
             matrixSourceIndices[(size_t) (slot - 1)] =
-                juce::roundToInt(readParameterPlain(apvts, reactormod::getMatrixSourceParamID(slot), 0.0f));
+                juce::jlimit(0,
+                             reactormod::maxModulationSourceCount,
+                             juce::roundToInt(readParameterPlain(apvts, reactormod::getMatrixSourceParamID(slot), 0.0f)));
             matrixSlotEnableds[(size_t) (slot - 1)] = false;
         }
 
@@ -3241,6 +3274,8 @@ PluginProcessor::ModulationSnapshot PluginProcessor::getModulationSnapshot() con
     const juce::SpinLock::ScopedLockType lock(modulationStateLock);
     ModulationSnapshot snapshot;
     snapshot.lfos = modulationLfos;
+    for (int macro = 1; macro <= reactormod::macroSourceCount; ++macro)
+        snapshot.macroValues[(size_t) (macro - 1)] = readParameterPlain(apvts, reactormod::getMacroParamID(macro), 0.0f);
     snapshot.matrixSources = matrixSourceIndices;
     snapshot.matrixEnabled = matrixSlotEnableds;
     return snapshot;
@@ -3259,6 +3294,23 @@ reactormod::DynamicLfoData PluginProcessor::getModulationLfo(int index) const
         return reactormod::makeDefaultLfo(1);
 
     return modulationLfos[(size_t) index];
+}
+
+std::vector<PluginProcessor::ModulationSourceInfo> PluginProcessor::getAvailableModulationSources() const
+{
+    std::vector<ModulationSourceInfo> sources;
+
+    const juce::SpinLock::ScopedLockType lock(modulationStateLock);
+    const size_t lfoSourceCount = juce::jmin(modulationLfos.size(), (size_t) reactormod::maxLfoSourceCount);
+    sources.reserve(lfoSourceCount + (size_t) reactormod::macroSourceCount);
+
+    for (size_t i = 0; i < lfoSourceCount; ++i)
+        sources.push_back({ reactormod::sourceIndexForLfo((int) i + 1), modulationLfos[i].name });
+
+    for (int macro = 1; macro <= reactormod::macroSourceCount; ++macro)
+        sources.push_back({ reactormod::sourceIndexForMacro(macro), "MOD " + juce::String(macro) });
+
+    return sources;
 }
 
 juce::StringArray PluginProcessor::getModulationLfoNames() const
@@ -3342,17 +3394,34 @@ void PluginProcessor::setMatrixSourceForSlot(int slotIndex, int sourceIndex)
         if (! juce::isPositiveAndBelow(slotIndex, reactormod::matrixSlotCount))
             return;
 
-        matrixSourceIndices[(size_t) slotIndex] = juce::jmax(0, sourceIndex);
-        matrixSlotEnableds[(size_t) slotIndex] = sourceIndex > 0;
+        const int clampedSourceIndex = juce::jlimit(0, reactormod::maxModulationSourceCount, sourceIndex);
+        matrixSourceIndices[(size_t) slotIndex] = clampedSourceIndex;
+        matrixSlotEnableds[(size_t) slotIndex] = clampedSourceIndex > 0;
     }
     writeModulationStateToTree();
 }
 
-PluginProcessor::DestinationModulationInfo PluginProcessor::getDestinationModulationInfo(reactormod::Destination destination) const
+int PluginProcessor::getSelectedModulationSourceIndex() const noexcept
+{
+    return juce::jlimit(0, reactormod::maxModulationSourceCount, selectedModulationSourceIndex.load());
+}
+
+void PluginProcessor::setSelectedModulationSourceIndex(int sourceIndex) noexcept
+{
+    selectedModulationSourceIndex.store(juce::jlimit(0, reactormod::maxModulationSourceCount, sourceIndex));
+}
+
+PluginProcessor::DestinationModulationInfo PluginProcessor::getDestinationModulationInfo(reactormod::Destination destination,
+                                                                                          int preferredSourceIndex) const
 {
     DestinationModulationInfo info;
     if (destination == reactormod::Destination::none || destination == reactormod::Destination::count)
         return info;
+
+    const int selectedSourceIndex = juce::jlimit(0,
+                                                 reactormod::maxModulationSourceCount,
+                                                 preferredSourceIndex > 0 ? preferredSourceIndex
+                                                                          : getSelectedModulationSourceIndex());
 
     const juce::SpinLock::ScopedLockType lock(modulationStateLock);
     for (int slot = 0; slot < reactormod::matrixSlotCount; ++slot)
@@ -3367,7 +3436,15 @@ PluginProcessor::DestinationModulationInfo PluginProcessor::getDestinationModula
             continue;
 
         ++info.routeCount;
-        if (info.slotIndex < 0 || std::abs(amount) > std::abs(info.amount))
+        if (selectedSourceIndex > 0 && sourceIndex == selectedSourceIndex)
+        {
+            info.sourceIndex = sourceIndex;
+            info.amount = amount;
+            info.slotIndex = slot;
+            return info;
+        }
+
+        if (selectedSourceIndex <= 0 && (info.slotIndex < 0 || std::abs(amount) > std::abs(info.amount)))
         {
             info.sourceIndex = sourceIndex;
             info.amount = amount;
@@ -3378,20 +3455,23 @@ PluginProcessor::DestinationModulationInfo PluginProcessor::getDestinationModula
     return info;
 }
 
-std::vector<PluginProcessor::ModulationRouteInfo> PluginProcessor::getRoutesForLfo(int lfoIndex) const
+std::vector<PluginProcessor::ModulationRouteInfo> PluginProcessor::getRoutesForSource(int sourceIndex) const
 {
     std::vector<ModulationRouteInfo> routes;
-    const int sourceIndex = juce::jmax(1, lfoIndex + 1);
+    if (sourceIndex <= 0)
+        return routes;
+
+    const int clampedSourceIndex = juce::jlimit(1, reactormod::maxModulationSourceCount, sourceIndex);
 
     const juce::SpinLock::ScopedLockType lock(modulationStateLock);
     for (int slot = 0; slot < reactormod::matrixSlotCount; ++slot)
     {
-        if (matrixSourceIndices[(size_t) slot] != sourceIndex)
+        if (matrixSourceIndices[(size_t) slot] != clampedSourceIndex)
             continue;
 
         ModulationRouteInfo route;
         route.slotIndex = slot;
-        route.sourceIndex = sourceIndex;
+        route.sourceIndex = clampedSourceIndex;
         route.destination = reactormod::destinationFromChoiceIndex(
             juce::roundToInt(readParameterPlain(apvts, reactormod::getMatrixDestinationParamID(slot + 1), 0.0f)));
         route.amount = readParameterPlain(apvts, reactormod::getMatrixAmountParamID(slot + 1), 0.0f);
@@ -3404,6 +3484,11 @@ std::vector<PluginProcessor::ModulationRouteInfo> PluginProcessor::getRoutesForL
     }
 
     return routes;
+}
+
+std::vector<PluginProcessor::ModulationRouteInfo> PluginProcessor::getRoutesForLfo(int lfoIndex) const
+{
+    return getRoutesForSource(reactormod::sourceIndexForLfo(lfoIndex + 1));
 }
 
 void PluginProcessor::setMatrixSlotEnabled(int slotIndex, bool enabled)
@@ -3442,12 +3527,12 @@ void PluginProcessor::removeMatrixSlot(int slotIndex)
     writeModulationStateToTree();
 }
 
-int PluginProcessor::assignLfoToDestination(int sourceIndex, reactormod::Destination destination, float defaultAmount)
+int PluginProcessor::assignSourceToDestination(int sourceIndex, reactormod::Destination destination, float defaultAmount)
 {
     if (destination == reactormod::Destination::none || destination == reactormod::Destination::count)
         return -1;
 
-    const int clampedSourceIndex = juce::jmax(1, sourceIndex);
+    const int clampedSourceIndex = juce::jlimit(1, reactormod::maxModulationSourceCount, sourceIndex);
     const float clampedDefaultAmount = juce::jlimit(-1.0f, 1.0f, defaultAmount);
     int chosenSlot = -1;
     float chosenAmount = clampedDefaultAmount;
@@ -3484,8 +3569,16 @@ int PluginProcessor::assignLfoToDestination(int sourceIndex, reactormod::Destina
         }
 
         if (chosenSlot < 0)
-            chosenSlot = firstSameDestination >= 0 ? firstSameDestination
-                                                   : (firstEmptySlot >= 0 ? firstEmptySlot : 0);
+        {
+            // Allow multiple modulators per destination by preferring a free row
+            // over recycling an existing route from a different source.
+            if (firstEmptySlot >= 0)
+                chosenSlot = firstEmptySlot;
+            else if (firstSameDestination >= 0)
+                chosenSlot = firstSameDestination;
+            else
+                chosenSlot = 0;
+        }
 
         matrixSourceIndices[(size_t) chosenSlot] = clampedSourceIndex;
         matrixSlotEnableds[(size_t) chosenSlot] = true;
@@ -3496,6 +3589,11 @@ int PluginProcessor::assignLfoToDestination(int sourceIndex, reactormod::Destina
     setParameterPlain(apvts, reactormod::getMatrixAmountParamID(chosenSlot + 1), chosenAmount);
     writeModulationStateToTree();
     return chosenSlot;
+}
+
+int PluginProcessor::assignLfoToDestination(int sourceIndex, reactormod::Destination destination, float defaultAmount)
+{
+    return assignSourceToDestination(sourceIndex, destination, defaultAmount);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
@@ -4508,10 +4606,6 @@ void PluginProcessor::updateEffectModulationState(int numSamples)
             continue;
 
         const int sourceIndex = snapshot.matrixSources[(size_t) slot];
-        const int lfoIndex = sourceIndex - 1;
-        if (! juce::isPositiveAndBelow(lfoIndex, (int) lfoValues.size()))
-            continue;
-
         const auto destination = reactormod::destinationFromChoiceIndex(
             juce::roundToInt(readParameterPlain(apvts, reactormod::getMatrixDestinationParamID(slot + 1), 0.0f)));
         if (! reactormod::isFXDestination(destination))
@@ -4527,10 +4621,14 @@ void PluginProcessor::updateEffectModulationState(int numSamples)
         if (! juce::isPositiveAndBelow(flatIndex, (int) effectModulationAmounts.size()))
             continue;
 
+        const float sourceValue = getModulationSourceValue(sourceIndex, lfoValues, snapshot.macroValues);
+        if (std::abs(sourceValue) <= 0.0001f)
+            continue;
+
         effectModulationAmounts[(size_t) flatIndex] = juce::jlimit(-1.0f,
                                                                    1.0f,
                                                                    effectModulationAmounts[(size_t) flatIndex]
-                                                                       + lfoValues[(size_t) lfoIndex] * amount);
+                                                                       + sourceValue * amount);
         effectModulationActive = true;
     }
 }

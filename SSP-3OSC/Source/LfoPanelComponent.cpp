@@ -133,7 +133,7 @@ public:
 
         if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this))
             if (! container->isDragAndDropActive())
-                container->startDragging("LFO:" + juce::String(selectedLfoIndex + 1), this);
+                container->startDragging(reactormod::getSourceDragDescription(reactormod::sourceIndexForLfo(selectedLfoIndex + 1)), this);
     }
 
 private:
@@ -660,6 +660,7 @@ private:
 LfoPanelComponent::LfoPanelComponent(PluginProcessor& p)
     : processor(p)
 {
+    addMouseListener(this, true);
     addAndMakeVisible(titleLabel);
     addAndMakeVisible(subLabel);
     addAndMakeVisible(selectorLabel);
@@ -766,6 +767,7 @@ LfoPanelComponent::LfoPanelComponent(PluginProcessor& p)
         if (selectorBox.getNumItems() <= 0)
             return;
         selectedLfoIndex = juce::jmax(0, selectorBox.getSelectedItemIndex());
+        processor.setSelectedModulationSourceIndex(reactormod::sourceIndexForLfo(selectedLfoIndex + 1));
         syncFromProcessor();
     };
 
@@ -783,6 +785,7 @@ LfoPanelComponent::LfoPanelComponent(PluginProcessor& p)
     addButton.onClick = [this]
     {
         selectedLfoIndex = processor.addModulationLfo();
+        processor.setSelectedModulationSourceIndex(reactormod::sourceIndexForLfo(selectedLfoIndex + 1));
         refreshSelector();
         syncFromProcessor();
     };
@@ -799,11 +802,18 @@ LfoPanelComponent::LfoPanelComponent(PluginProcessor& p)
     countLabel.setJustificationType(juce::Justification::centredRight);
 
     refreshSelector();
+    processor.setSelectedModulationSourceIndex(reactormod::sourceIndexForLfo(selectedLfoIndex + 1));
     syncFromProcessor();
     startTimerHz(8);
 }
 
 LfoPanelComponent::~LfoPanelComponent() = default;
+
+void LfoPanelComponent::mouseDown(const juce::MouseEvent& event)
+{
+    juce::ignoreUnused(event);
+    processor.setSelectedModulationSourceIndex(reactormod::sourceIndexForLfo(selectedLfoIndex + 1));
+}
 
 void LfoPanelComponent::paint(juce::Graphics& g)
 {
@@ -866,6 +876,7 @@ void LfoPanelComponent::refreshSelector()
 
     selectedLfoIndex = juce::jlimit(0, juce::jmax(0, selectorBox.getNumItems() - 1), selectedLfoIndex);
     selectorBox.setSelectedItemIndex(selectedLfoIndex, juce::dontSendNotification);
+    processor.setSelectedModulationSourceIndex(reactormod::sourceIndexForLfo(selectedLfoIndex + 1));
     syncing = false;
 }
 

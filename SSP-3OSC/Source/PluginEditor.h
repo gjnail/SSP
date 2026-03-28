@@ -6,6 +6,7 @@
 #include "FilterSectionComponent.h"
 #include "EnvelopeSectionComponent.h"
 #include "LfoPanelComponent.h"
+#include "ModSectionComponent.h"
 #include "NoiseSectionComponent.h"
 #include "SubOscSectionComponent.h"
 #include "VoiceSectionComponent.h"
@@ -91,6 +92,7 @@ private:
     EnvelopeSectionComponent ampEnvelopeSection;
     EnvelopeSectionComponent filterEnvelopeSection;
     LfoPanelComponent lfoPanelSection;
+    ModSectionComponent modSection;
     NoiseSectionComponent noiseSection;
     SubOscSectionComponent subOscSection;
     VoiceSectionComponent voiceSection;

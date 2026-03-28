@@ -56,7 +56,7 @@ bool ModulationKnob::isInterestedInDragSource(const SourceDetails& dragSourceDet
 {
     dragAccepting = processor != nullptr
         && destination != reactormod::Destination::none
-        && isLfoDragDescription(dragSourceDetails.description);
+        && isModulationSourceDragDescription(dragSourceDetails.description);
     return dragAccepting;
 }
 
@@ -84,7 +84,10 @@ void ModulationKnob::itemDropped(const SourceDetails& dragSourceDetails)
     const int sourceIndex = sourceIndexFromDescription(dragSourceDetails.description);
     dragSourceIndex = 0;
     if (processor != nullptr && sourceIndex > 0 && destination != reactormod::Destination::none)
-        processor->assignLfoToDestination(sourceIndex, destination, 1.0f);
+    {
+        processor->setSelectedModulationSourceIndex(sourceIndex);
+        processor->assignSourceToDestination(sourceIndex, destination, 1.0f);
+    }
 
     refreshModulationState();
     repaint();
@@ -113,6 +116,9 @@ void ModulationKnob::mouseExit(const juce::MouseEvent& event)
 
 void ModulationKnob::mouseDown(const juce::MouseEvent& event)
 {
+    if (onPrimaryInteract)
+        onPrimaryInteract();
+
     if (shouldShowTargetChip() && getTargetChipBounds().contains(event.position))
     {
         editingTargetDepth = true;
@@ -235,7 +241,8 @@ void ModulationKnob::refreshModulationState()
     if (processor == nullptr)
         return;
 
-    const auto latestInfo = processor->getDestinationModulationInfo(destination);
+    const auto latestInfo = processor->getDestinationModulationInfo(destination,
+                                                                   processor->getSelectedModulationSourceIndex());
     if (latestInfo.sourceIndex != modulationInfo.sourceIndex
         || std::abs(latestInfo.amount - modulationInfo.amount) > 0.0001f
         || latestInfo.slotIndex != modulationInfo.slotIndex
@@ -259,18 +266,14 @@ void ModulationKnob::timerCallback()
     }
 }
 
-bool ModulationKnob::isLfoDragDescription(const juce::var& description) const
+bool ModulationKnob::isModulationSourceDragDescription(const juce::var& description) const
 {
-    return description.toString().startsWith("LFO:");
+    return reactormod::isModulationSourceDragDescription(description.toString());
 }
 
 int ModulationKnob::sourceIndexFromDescription(const juce::var& description) const
 {
-    const auto text = description.toString();
-    if (! text.startsWith("LFO:"))
-        return 0;
-
-    return juce::jmax(0, text.fromFirstOccurrenceOf(":", false, false).getIntValue());
+    return reactormod::sourceIndexFromDragDescription(description.toString());
 }
 
 juce::Rectangle<float> ModulationKnob::getKnobBounds() const

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "ModSectionComponent.h"
 #include "PluginProcessor.h"
 
 class EffectsRackComponent final : public juce::Component,
@@ -32,12 +33,14 @@ private:
     juce::Label lfoLabel;
     juce::ComboBox lfoSelector;
     std::unique_ptr<juce::Component> lfoDragBadge;
+    ModSectionComponent modSection;
     juce::OwnedArray<juce::Component> rackItems;
     juce::OwnedArray<juce::Component> orderItems;
     juce::Rectangle<int> rackPanelBounds;
     juce::Rectangle<int> orderPanelBounds;
     juce::Rectangle<int> orderRowsBounds;
     juce::Rectangle<int> lfoPanelBounds;
+    juce::Rectangle<int> modPanelBounds;
     juce::Array<int> cachedOrder;
     juce::StringArray cachedLfoNames;
     bool orderDragInProgress = false;

@@ -53,7 +53,7 @@ public:
         clearButton.onClick = [this]
         {
             processor.setMatrixSourceForSlot(slotIndex - 1, 0);
-            sourceBox.setSelectedItemIndex(0, juce::dontSendNotification);
+            sourceBox.setSelectedId(1, juce::dontSendNotification);
             destinationBox.setSelectedItemIndex(0, juce::sendNotificationSync);
             amountSlider.setValue(0.0, juce::sendNotificationSync);
         };
@@ -61,7 +61,7 @@ public:
         sourceBox.onChange = [this]
         {
             if (! syncingSource)
-                processor.setMatrixSourceForSlot(slotIndex - 1, sourceBox.getSelectedItemIndex());
+                processor.setMatrixSourceForSlot(slotIndex - 1, juce::jmax(0, sourceBox.getSelectedId() - 1));
         };
 
         destinationAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
@@ -75,14 +75,21 @@ public:
 
     void refreshSourceItems()
     {
-        const auto currentNames = processor.getModulationLfoNames();
+        const auto currentSources = processor.getAvailableModulationSources();
+        juce::StringArray currentNames;
+        currentNames.add("Off");
+        for (const auto& source : currentSources)
+            currentNames.add(source.name);
+
         if (currentNames == cachedSourceNames)
             return;
 
         cachedSourceNames = currentNames;
         syncingSource = true;
         sourceBox.clear(juce::dontSendNotification);
-        sourceBox.addItemList(cachedSourceNames, 1);
+        sourceBox.addItem("Off", 1);
+        for (const auto& source : currentSources)
+            sourceBox.addItem(source.name, source.sourceIndex + 1);
         syncSourceFromProcessor();
         syncingSource = false;
     }
@@ -90,7 +97,7 @@ public:
     void syncSourceFromProcessor()
     {
         syncingSource = true;
-        sourceBox.setSelectedItemIndex(processor.getMatrixSourceForSlot(slotIndex - 1), juce::dontSendNotification);
+        sourceBox.setSelectedId(processor.getMatrixSourceForSlot(slotIndex - 1) + 1, juce::dontSendNotification);
         syncingSource = false;
     }
 
@@ -119,7 +126,7 @@ public:
 
     bool isInterestedInDragSource(const SourceDetails& dragSourceDetails) override
     {
-        return dragSourceDetails.description.toString().startsWith("LFO:");
+        return reactormod::isModulationSourceDragDescription(dragSourceDetails.description.toString());
     }
 
     void itemDragEnter(const SourceDetails&) override
@@ -137,11 +144,10 @@ public:
     void itemDropped(const SourceDetails& dragSourceDetails) override
     {
         dropActive = false;
-        const auto description = dragSourceDetails.description.toString();
-        if (! description.startsWith("LFO:"))
+        const int sourceIndex = reactormod::sourceIndexFromDragDescription(dragSourceDetails.description.toString());
+        if (sourceIndex <= 0)
             return;
 
-        const int sourceIndex = description.fromFirstOccurrenceOf(":", false, false).getIntValue();
         processor.setMatrixSourceForSlot(slotIndex - 1, sourceIndex);
         syncSourceFromProcessor();
 
@@ -183,11 +189,11 @@ ModMatrixComponent::ModMatrixComponent(PluginProcessor& p)
     titleLabel.setText("MOD MATRIX", juce::dontSendNotification);
     reactorui::styleTitle(titleLabel, 15.0f);
 
-    subLabel.setText("Route any LFO from the growing source bank into the synth with per-slot destination and bipolar amount.",
+    subLabel.setText("Route LFOs and MOD knobs from the source bank into the synth or FX with per-slot destination and bipolar amount.",
                      juce::dontSendNotification);
     reactorui::styleMeta(subLabel, 11.2f);
 
-    dragLabel.setText("Drag the active LFO from the front-panel editor into a row, or pick it from the Source menu.", juce::dontSendNotification);
+    dragLabel.setText("Drag an LFO or MOD source into a row, or pick it from the Source menu.", juce::dontSendNotification);
     dragLabel.setFont(reactorui::bodyFont(11.0f));
     dragLabel.setColour(juce::Label::textColourId, matrixAccent().withAlpha(0.82f));
     dragLabel.setJustificationType(juce::Justification::centredLeft);

@@ -57,6 +57,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
       ampEnvelopeSection(p, p.apvts, "AMP ADSR", "amp", juce::Colour(0xff53d6be)),
       filterEnvelopeSection(p, p.apvts, "FILTER ADSR", "filter", juce::Colour(0xff58c7ff)),
       lfoPanelSection(p),
+      modSection(p, p.apvts, "MOD", "Drag the orange mod knobs onto any parameter."),
       noiseSection(p, p.apvts),
       subOscSection(p, p.apvts),
       voiceSection(p, p.apvts),
@@ -124,6 +125,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     synthPage.addAndMakeVisible(ampEnvelopeSection);
     synthPage.addAndMakeVisible(filterEnvelopeSection);
     synthPage.addAndMakeVisible(lfoPanelSection);
+    synthPage.addAndMakeVisible(modSection);
     synthPage.addAndMakeVisible(noiseSection);
     synthPage.addAndMakeVisible(subOscSection);
     synthPage.addAndMakeVisible(warpSection);
@@ -275,7 +277,11 @@ void PluginEditor::layoutSynthPage()
     noiseSection.setBounds(sourceColumn);
 
     auto lowerRow = bodyArea.removeFromTop(juce::jmin(lfoHeight, bodyArea.getHeight()));
-    lfoPanelSection.setBounds(lowerRow);
+    const int modSectionWidth = juce::jlimit(300, 380, lowerRow.getWidth() / 5);
+    auto lfoArea = lowerRow.removeFromLeft(juce::jmax(620, lowerRow.getWidth() - modSectionWidth - sectionGap));
+    lowerRow.removeFromLeft(sectionGap);
+    lfoPanelSection.setBounds(lfoArea);
+    modSection.setBounds(lowerRow);
 
     keyboardComponent.setBounds(keyboardArea);
 }

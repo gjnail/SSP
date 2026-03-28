@@ -361,7 +361,7 @@ public:
 
         if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this))
             if (! container->isDragAndDropActive())
-                container->startDragging("LFO:" + juce::String(selectedSourceIndex), this);
+                container->startDragging(reactormod::getSourceDragDescription(reactormod::sourceIndexForLfo(selectedSourceIndex)), this);
     }
 
 private:
@@ -370,7 +370,8 @@ private:
 }
 
 EffectsRackComponent::EffectsRackComponent(PluginProcessor& p)
-    : processor(p)
+    : processor(p),
+      modSection(p, p.apvts, "MOD", "")
 {
     addAndMakeVisible(titleLabel);
     addAndMakeVisible(subtitleLabel);
@@ -382,6 +383,7 @@ EffectsRackComponent::EffectsRackComponent(PluginProcessor& p)
     addAndMakeVisible(lfoSelector);
     lfoDragBadge = std::make_unique<FXLfoDragBadge>();
     addAndMakeVisible(*lfoDragBadge);
+    addAndMakeVisible(modSection);
 
     titleLabel.setText("EFFECTS RACK", juce::dontSendNotification);
     subtitleLabel.setText("Build the rack in series or switch rows to parallel on the right. Drag the order into place, bypass rows with ON/OFF, and use SER/PAR to branch effects from the current chain.", juce::dontSendNotification);
@@ -453,6 +455,7 @@ EffectsRackComponent::EffectsRackComponent(PluginProcessor& p)
     lfoSelector.setColour(juce::ComboBox::arrowColourId, reactorui::brandCyan());
     lfoSelector.onChange = [this]
     {
+        processor.setSelectedModulationSourceIndex(reactormod::sourceIndexForLfo(juce::jmax(0, lfoSelector.getSelectedId() - 1)));
         if (auto* badge = dynamic_cast<FXLfoDragBadge*>(lfoDragBadge.get()))
             badge->setSelectedSourceIndex(juce::jmax(0, lfoSelector.getSelectedId() - 1));
     };
@@ -483,6 +486,9 @@ void EffectsRackComponent::paint(juce::Graphics& g)
     if (! lfoPanelBounds.isEmpty())
         reactorui::drawPanelBackground(g, lfoPanelBounds.toFloat(), reactorui::brandCyan(), 10.0f);
 
+    if (! modPanelBounds.isEmpty())
+        reactorui::drawPanelBackground(g, modPanelBounds.toFloat(), juce::Colour(0xffff8b3d), 10.0f);
+
     const bool hasStages = std::any_of(cachedOrder.begin(), cachedOrder.end(), [] (int moduleType)
     {
         return PluginProcessor::isSupportedFXModuleType(moduleType) && moduleType != 0;
@@ -506,7 +512,7 @@ void EffectsRackComponent::resized()
     subtitleLabel.setBounds(area.removeFromTop(32));
     area.removeFromTop(12);
 
-    orderPanelBounds = area.removeFromRight(324);
+    orderPanelBounds = area.removeFromRight(368);
     area.removeFromRight(16);
     rackPanelBounds = area;
 
@@ -521,6 +527,8 @@ void EffectsRackComponent::resized()
     orderArea.removeFromTop(10);
     addButton.setBounds(orderArea.removeFromTop(34));
     orderArea.removeFromTop(14);
+    modPanelBounds = orderArea.removeFromBottom(264);
+    orderArea.removeFromBottom(10);
     lfoPanelBounds = orderArea.removeFromBottom(112);
     orderRowsBounds = orderArea;
 
@@ -531,6 +539,8 @@ void EffectsRackComponent::resized()
     lfoArea.removeFromTop(10);
     if (lfoDragBadge != nullptr)
         lfoDragBadge->setBounds(lfoArea.removeFromTop(32));
+
+    modSection.setBounds(modPanelBounds);
 
     refreshRack();
 }
