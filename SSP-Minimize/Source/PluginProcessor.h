@@ -40,11 +40,13 @@ public:
     {
         float centreHz = 0.0f;
         float attenuation = 0.0f;
+        float differenceLevel = 0.0f;
     };
 
-    static constexpr size_t numBands = 8;
+    static constexpr size_t numBands = 48;
 
     std::array<BandVisual, numBands> getBandVisuals() const;
+    bool isSoloDifferenceEnabled() const;
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -57,6 +59,7 @@ private:
         float centreHz = 1000.0f;
         float q = 2.5f;
         float attenuationForUi = 0.0f;
+        float differenceForUi = 0.0f;
     };
 
     std::array<BandState, numBands> bands;

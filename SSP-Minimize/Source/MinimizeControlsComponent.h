@@ -13,6 +13,7 @@ public:
 
 private:
     class MinimizeKnob;
+    class DifferenceButtonCard;
 
     juce::AudioProcessorValueTreeState& apvts;
     std::unique_ptr<MinimizeKnob> depthKnob;
@@ -22,6 +23,7 @@ private:
     std::unique_ptr<MinimizeKnob> attackKnob;
     std::unique_ptr<MinimizeKnob> releaseKnob;
     std::unique_ptr<MinimizeKnob> mixKnob;
+    std::unique_ptr<DifferenceButtonCard> differenceButton;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MinimizeControlsComponent)
 };

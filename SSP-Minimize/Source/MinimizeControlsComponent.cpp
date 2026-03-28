@@ -191,6 +191,65 @@ private:
     bool showCaption = false;
 };
 
+class MinimizeControlsComponent::DifferenceButtonCard final : public juce::Component
+{
+public:
+    explicit DifferenceButtonCard(juce::AudioProcessorValueTreeState& state)
+        : attachment(state, "soloDifference", button)
+    {
+        addAndMakeVisible(button);
+        addAndMakeVisible(titleLabel);
+
+        button.setButtonText("Solo Difference");
+        button.setClickingTogglesState(true);
+        button.onClick = [this] { refreshStyle(); };
+
+        titleLabel.setText("Delta monitor", juce::dontSendNotification);
+        titleLabel.setJustificationType(juce::Justification::centredLeft);
+        titleLabel.setFont(minimizeui::sectionFont(14.0f));
+        titleLabel.setColour(juce::Label::textColourId, strongText());
+
+        refreshStyle();
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        auto area = getLocalBounds().toFloat();
+        juce::ColourGradient fill(button.getToggleState() ? juce::Colour(0xff13242a) : juce::Colour(0xfffffbf3),
+                                  area.getTopLeft(),
+                                  button.getToggleState() ? juce::Colour(0xff0c171c) : juce::Colour(0xffefe4d1),
+                                  area.getBottomLeft(), false);
+        g.setGradientFill(fill);
+        g.fillRoundedRectangle(area, 18.0f);
+
+        g.setColour(button.getToggleState() ? accentMint().withAlpha(0.7f) : juce::Colours::black.withAlpha(0.08f));
+        g.drawRoundedRectangle(area.reduced(0.5f), 18.0f, 1.3f);
+    }
+
+    void resized() override
+    {
+        auto area = getLocalBounds().reduced(12, 10);
+        titleLabel.setBounds(area.removeFromLeft(110));
+        button.setBounds(area.removeFromRight(132).withTrimmedTop(1).withTrimmedBottom(1));
+    }
+
+private:
+    void refreshStyle()
+    {
+        const auto active = button.getToggleState();
+        button.setColour(juce::TextButton::buttonColourId, active ? accentMint() : juce::Colour(0xff1b2128));
+        button.setColour(juce::TextButton::buttonOnColourId, accentMint().brighter(0.08f));
+        button.setColour(juce::TextButton::textColourOffId, active ? juce::Colour(0xff061117) : juce::Colour(0xfff4f1ea));
+        button.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff061117));
+        titleLabel.setColour(juce::Label::textColourId, active ? accentMint().brighter(0.3f) : strongText());
+        repaint();
+    }
+
+    juce::TextButton button;
+    juce::Label titleLabel;
+    juce::AudioProcessorValueTreeState::ButtonAttachment attachment;
+};
+
 MinimizeControlsComponent::MinimizeControlsComponent(juce::AudioProcessorValueTreeState& state)
     : apvts(state)
 {
@@ -201,6 +260,7 @@ MinimizeControlsComponent::MinimizeControlsComponent(juce::AudioProcessorValueTr
     attackKnob = std::make_unique<MinimizeKnob>(apvts, "attack", "Attack", juce::String(), false, false);
     releaseKnob = std::make_unique<MinimizeKnob>(apvts, "release", "Release", juce::String(), false, false);
     mixKnob = std::make_unique<MinimizeKnob>(apvts, "mix", "Mix", juce::String(), false, false);
+    differenceButton = std::make_unique<DifferenceButtonCard>(apvts);
 
     addAndMakeVisible(*depthKnob);
     addAndMakeVisible(*sensitivityKnob);
@@ -209,6 +269,7 @@ MinimizeControlsComponent::MinimizeControlsComponent(juce::AudioProcessorValueTr
     addAndMakeVisible(*attackKnob);
     addAndMakeVisible(*releaseKnob);
     addAndMakeVisible(*mixKnob);
+    addAndMakeVisible(*differenceButton);
 }
 
 MinimizeControlsComponent::~MinimizeControlsComponent() = default;
@@ -219,10 +280,12 @@ void MinimizeControlsComponent::paint(juce::Graphics& g)
     minimizeui::drawPanelBackground(g, bounds, minimizeui::brandCyan(), 24.0f);
 
     auto inner = bounds.reduced(24.0f, 18.0f);
-    auto eyebrow = inner.removeFromTop(18.0f);
+    auto headerStrip = inner.removeFromTop(20.0f);
     g.setColour(subtleText());
     g.setFont(minimizeui::bodyFont(12.0f));
-    g.drawText("Control dock", eyebrow.toNearestInt(), juce::Justification::centredLeft, false);
+    g.drawText("Control dock", headerStrip.removeFromLeft(160.0f).toNearestInt(), juce::Justification::centredLeft, false);
+    g.drawText("Difference audition stays in the control strip so the main knobs keep their size.",
+               headerStrip.toNearestInt(), juce::Justification::centredRight, false);
 
     auto dividerX = inner.getX() + 228.0f;
     g.setColour(juce::Colours::black.withAlpha(0.08f));
@@ -237,7 +300,9 @@ void MinimizeControlsComponent::paint(juce::Graphics& g)
 void MinimizeControlsComponent::resized()
 {
     auto area = getLocalBounds().reduced(24, 18);
-    area.removeFromTop(24);
+    auto topBar = area.removeFromTop(42);
+    differenceButton->setBounds(topBar.removeFromRight(260));
+    area.removeFromTop(6);
 
     auto depthArea = area.removeFromLeft(220);
     depthKnob->setBounds(depthArea.reduced(0, 4));
@@ -247,16 +312,16 @@ void MinimizeControlsComponent::resized()
     auto topRow = area.removeFromTop(area.getHeight() / 2);
     const int gap = 12;
     const int topWidth = (topRow.getWidth() - gap * 2) / 3;
-    sensitivityKnob->setBounds(topRow.removeFromLeft(topWidth).reduced(6, 4));
+    sensitivityKnob->setBounds(topRow.removeFromLeft(topWidth).reduced(4, 2));
     topRow.removeFromLeft(gap);
-    sharpnessKnob->setBounds(topRow.removeFromLeft(topWidth).reduced(6, 4));
+    sharpnessKnob->setBounds(topRow.removeFromLeft(topWidth).reduced(4, 2));
     topRow.removeFromLeft(gap);
-    focusKnob->setBounds(topRow.reduced(6, 4));
+    focusKnob->setBounds(topRow.reduced(4, 2));
 
     const int bottomWidth = (area.getWidth() - gap * 2) / 3;
-    attackKnob->setBounds(area.removeFromLeft(bottomWidth).reduced(6, 4));
+    attackKnob->setBounds(area.removeFromLeft(bottomWidth).reduced(4, 2));
     area.removeFromLeft(gap);
-    releaseKnob->setBounds(area.removeFromLeft(bottomWidth).reduced(6, 4));
+    releaseKnob->setBounds(area.removeFromLeft(bottomWidth).reduced(4, 2));
     area.removeFromLeft(gap);
-    mixKnob->setBounds(area.reduced(6, 4));
+    mixKnob->setBounds(area.reduced(4, 2));
 }

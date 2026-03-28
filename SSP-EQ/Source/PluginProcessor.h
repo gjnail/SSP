@@ -1,24 +1,107 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <atomic>
 
-class PluginProcessor final : public juce::AudioProcessor
+class PluginProcessor final : public juce::AudioProcessor,
+                              private juce::AudioProcessorValueTreeState::Listener
 {
 public:
+    enum PointType
+    {
+        bell = 0,
+        lowShelf,
+        highShelf,
+        lowCut,
+        highCut,
+        notch,
+        bandPass,
+        tiltShelf
+    };
+
+    enum StereoMode
+    {
+        stereo = 0,
+        left,
+        right,
+        mid,
+        side
+    };
+
+    enum AnalyzerMode
+    {
+        analyzerPre = 0,
+        analyzerPost,
+        analyzerPrePost,
+        analyzerSidechain
+    };
+
+    enum ProcessingMode
+    {
+        zeroLatency = 0,
+        naturalPhase,
+        linearPhase
+    };
+
     struct EqPoint
     {
         bool enabled = false;
         float frequency = 1000.0f;
         float gainDb = 0.0f;
         float q = 1.0f;
-        int type = 0;
+        int type = bell;
+        int slopeIndex = 1;
+        int stereoMode = stereo;
     };
 
-    static constexpr int maxPoints = 8;
+    static constexpr int maxPoints = 24;
+    static constexpr int maxStagesPerPoint = 8;
     static constexpr int fftOrder = 11;
     static constexpr int fftSize = 1 << fftOrder;
     using PointArray = std::array<EqPoint, maxPoints>;
     using SpectrumArray = std::array<float, fftSize / 2>;
+
+    struct AnalyzerFrame
+    {
+        SpectrumArray pre{};
+        SpectrumArray post{};
+        SpectrumArray sidechain{};
+    };
+
+    struct PointFilterSetup
+    {
+        std::array<juce::IIRCoefficients, maxStagesPerPoint> coeffs{};
+        int numStages = 0;
+    };
+
+    struct PresetBand
+    {
+        bool enabled = true;
+        juce::String type = "bell";
+        float frequency = 1000.0f;
+        float gain = 0.0f;
+        float q = 1.0f;
+        int slope = 12;
+        juce::String stereoMode = "stereo";
+    };
+
+    struct PresetRecord
+    {
+        juce::String id;
+        juce::String name;
+        juce::String category;
+        juce::String author;
+        bool isFactory = false;
+        juce::Array<PresetBand> bands;
+        juce::String version = "1.0";
+    };
+
+    enum class RandomizeMode
+    {
+        subtle = 0,
+        standard,
+        extreme
+    };
 
     PluginProcessor();
     ~PluginProcessor() override;
@@ -51,6 +134,13 @@ public:
     juce::AudioProcessorValueTreeState apvts;
 
     static const juce::StringArray& getPointTypeNames();
+    static const juce::StringArray& getPointTypeDisplayNames();
+    static const juce::StringArray& getSlopeNames();
+    static const juce::StringArray& getStereoModeNames();
+    static const juce::StringArray& getAnalyzerModeNames();
+    static const juce::StringArray& getProcessingModeNames();
+    static const juce::StringArray& getAnalyzerResolutionNames();
+    static const juce::Array<PresetRecord>& getFactoryPresets();
 
     EqPoint getPoint(int index) const;
     PointArray getPointsSnapshot() const;
@@ -59,27 +149,142 @@ public:
     int addPoint(float frequency, float gainDb);
     void removePoint(int index);
     float getResponseForFrequency(float frequency) const;
+    float getResponseForFrequencyByStereoMode(float frequency, int stereoMode) const;
+    float getBandResponseForFrequency(int index, float frequency) const;
     int getEnabledPointCount() const;
-    SpectrumArray getSpectrumDataCopy() const;
+    AnalyzerFrame getAnalyzerFrameCopy() const;
     double getCurrentSampleRate() const noexcept { return currentSampleRate; }
+    float getOutputGainDb() const;
+    bool isGlobalBypassed() const;
+    int getAnalyzerMode() const;
+    int getProcessingMode() const;
+    int getAnalyzerResolution() const;
+    float getAnalyzerDecay() const;
+    const juce::Array<PresetRecord>& getUserPresets() const noexcept { return userPresets; }
+    juce::File getUserPresetDirectory() const;
+    juce::String getCurrentPresetName() const noexcept;
+    juce::String getCurrentPresetCategory() const noexcept;
+    juce::String getCurrentPresetAuthor() const noexcept;
+    juce::String getCurrentPresetKey() const noexcept;
+    bool isCurrentPresetFactory() const noexcept;
+    bool isCurrentPresetDirty() const noexcept;
+    bool matchesCurrentPreset(const PresetRecord&) const noexcept;
+    juce::StringArray getAvailablePresetCategories() const;
+    void refreshUserPresets();
+    bool loadFactoryPreset(int index);
+    bool loadUserPreset(int index);
+    bool saveUserPreset(const juce::String& presetName, const juce::String& category);
+    bool deleteUserPreset(int index);
+    bool importPresetFromFile(const juce::File& file, bool loadAfterImport = true);
+    bool exportCurrentPresetToFile(const juce::File& file) const;
+    bool resetUserPresetsToFactoryDefaults();
+    bool hasLoadedPresetState() const noexcept;
+    bool hasABComparisonTarget() const noexcept;
+    bool isABComparisonActive() const noexcept;
+    bool toggleABComparison();
+    bool beginPresetPreview(const PresetRecord&);
+    void endPresetPreview();
+    bool isPresetPreviewActive() const noexcept;
+    PointArray getPreviewReferencePointsSnapshot() const;
+    int getActiveCompareSlot() const noexcept;
+    bool setActiveCompareSlot(int slotIndex);
+    bool copyActiveCompareSlotToOther();
+    int getSoloPointIndex() const noexcept;
+    void setSoloPointIndex(int pointIndex);
+    void toggleSoloPoint(int pointIndex);
+    juce::Array<PresetRecord> getSequentialPresetList() const;
+    bool stepPreset(int delta);
+    bool loadPresetByKey(const juce::String& presetKey);
+    void randomizeCurrentSlot(RandomizeMode mode);
+    bool undoRandomizeCurrentSlot();
+    bool hasRandomizeUndo() const noexcept;
+    int consumePendingVisualTransitionMs(int fallbackMs);
 
 private:
+    struct PresetStateSnapshot
+    {
+        PointArray points{};
+        bool valid = false;
+    };
+
+    struct CompareSlotState
+    {
+        PresetStateSnapshot snapshot;
+        PresetStateSnapshot baselineSnapshot;
+        juce::String presetKey;
+        juce::String presetName;
+        juce::String presetCategory;
+        juce::String presetAuthor;
+        bool isFactory = false;
+        bool dirty = false;
+    };
+
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    void parameterChanged(const juce::String& parameterID, float newValue) override;
     void syncPointCacheFromParameters();
+    void initialisePresetTracking();
+    void restorePresetMetadataFromState();
+    void applyPresetRecord(const PresetRecord& preset, bool updateLoadedPresetReference);
+    void applyPresetSnapshot(const PresetStateSnapshot& snapshot);
+    PresetStateSnapshot captureCurrentPresetSnapshot() const;
+    void syncCurrentStateIntoActiveCompareSlot();
+    void applyCompareSlotState(int slotIndex);
+    void setCompareSlotState(int slotIndex, const CompareSlotState& state);
+    CompareSlotState captureCurrentCompareSlotState() const;
+    void setCurrentPresetMetadata(juce::String presetKey, juce::String presetName, juce::String category, juce::String author, bool isFactory);
+    PresetRecord buildCurrentPresetRecord(juce::String presetName, juce::String category, juce::String author, bool isFactory) const;
+    void clearABState();
+    void requestVisualTransitionMs(int durationMs);
+    void updateSoloMonitoringSetup();
     void pushSpectrumSample(float sample) noexcept;
-    void performSpectrumAnalysis();
+    void pushPreSpectrumSample(float sample) noexcept;
+    void pushPostSpectrumSample(float sample) noexcept;
+    void pushSidechainSpectrumSample(float sample) noexcept;
+    void performSpectrumAnalysis(const std::array<float, fftSize>& source, SpectrumArray& destination, float decayAmount);
+    float processPointForDomain(int domainIndex, int pointIndex, float sample);
+    void updateFilterStates();
 
     double currentSampleRate = 44100.0;
-    std::array<std::array<juce::IIRFilter, maxPoints>, 2> filters;
+    std::array<std::array<std::array<juce::IIRFilter, maxStagesPerPoint>, maxPoints>, 4> filters;
     mutable juce::SpinLock stateLock;
     PointArray pointCache{};
-    std::array<juce::IIRCoefficients, maxPoints> coefficientCache{};
+    std::array<PointFilterSetup, maxPoints> coefficientCache{};
     juce::dsp::FFT fft{fftOrder};
     juce::dsp::WindowingFunction<float> fftWindow{fftSize, juce::dsp::WindowingFunction<float>::hann, true};
-    std::array<float, fftSize> spectrumFifo{};
+    std::array<float, fftSize> preSpectrumFifo{};
+    std::array<float, fftSize> postSpectrumFifo{};
+    std::array<float, fftSize> sidechainSpectrumFifo{};
     std::array<float, fftSize * 2> fftData{};
-    SpectrumArray spectrumData{};
-    int spectrumFifoIndex = 0;
+    AnalyzerFrame analyzerFrame{};
+    int preSpectrumFifoIndex = 0;
+    int postSpectrumFifoIndex = 0;
+    int sidechainSpectrumFifoIndex = 0;
+    juce::StringArray parameterIDs;
+    juce::Array<PresetRecord> userPresets;
+    juce::Array<juce::File> userPresetFiles;
+    juce::String currentPresetKey;
+    juce::String currentPresetName;
+    juce::String currentPresetCategory;
+    juce::String currentPresetAuthor;
+    bool currentPresetIsFactory = false;
+    std::atomic<bool> currentPresetDirty{false};
+    std::atomic<int> dirtyTrackingSuppressionDepth{0};
+    PresetStateSnapshot lastLoadedPresetSnapshot;
+    PresetStateSnapshot previewRestoreSnapshot;
+    PresetStateSnapshot abComparisonSnapshot;
+    bool previewActive = false;
+    juce::String previewPresetKey;
+    bool abComparisonActive = false;
+    std::array<CompareSlotState, 2> compareSlots;
+    int activeCompareSlot = 0;
+    CompareSlotState randomizeUndoState;
+    bool hasRandomizeUndoState = false;
+    int soloPointIndex = -1;
+    juce::IIRFilter soloHighPassLeft;
+    juce::IIRFilter soloHighPassRight;
+    juce::IIRFilter soloLowPassLeft;
+    juce::IIRFilter soloLowPassRight;
+    std::atomic<int> pendingVisualTransitionMs{90};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };

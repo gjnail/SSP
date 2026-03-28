@@ -1,0 +1,44 @@
+#pragma once
+
+#include <JuceHeader.h>
+#include "PluginProcessor.h"
+#include "SSPVectorUI.h"
+
+class EqGraphComponent final : public juce::Component,
+                               private juce::Timer
+{
+public:
+    explicit EqGraphComponent(PluginProcessor&);
+
+    void paint(juce::Graphics&) override;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    void mouseDoubleClick(const juce::MouseEvent&) override;
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
+    void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    void resized() override;
+
+    void setSelectedPoint(int index);
+    int getSelectedPoint() const noexcept { return selectedPoint; }
+
+    std::function<void(int)> onSelectionChanged;
+
+private:
+    void timerCallback() override;
+    juce::Rectangle<int> getPlotBounds() const;
+    juce::Point<float> pointToScreen(int pointIndex, const PluginProcessor::EqPoint& point) const;
+    PluginProcessor::EqPoint screenToPoint(juce::Point<float> position, const PluginProcessor::EqPoint& source) const;
+    int hitTestPoint(juce::Point<float> position) const;
+    void selectPoint(int index);
+
+    PluginProcessor& processor;
+    int selectedPoint = -1;
+    int dragPoint = -1;
+    int hoverPoint = -1;
+    bool showNoteAxis = false;
+    ssp::ui::SSPButton notesButton{"Notes"};
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EqGraphComponent)
+};

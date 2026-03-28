@@ -1,0 +1,31 @@
+#pragma once
+
+#include <memory>
+#include <JuceHeader.h>
+#include "EQ3ControlsComponent.h"
+#include "EQ3GraphComponent.h"
+#include "EQ3VectorUI.h"
+#include "PluginProcessor.h"
+
+class PluginEditor final : public juce::AudioProcessorEditor
+{
+public:
+    explicit PluginEditor(PluginProcessor&);
+    ~PluginEditor() override;
+
+    void paint(juce::Graphics&) override;
+    void resized() override;
+
+private:
+    using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+
+    PluginProcessor& pluginProcessor;
+    EQ3GraphComponent graph;
+    EQ3ControlsComponent controls;
+    eq3ui::SSPToggle powerToggle{"POWER"};
+    juce::Label titleLabel;
+    juce::Label tagLabel;
+    std::unique_ptr<ButtonAttachment> powerAttachment;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditor)
+};

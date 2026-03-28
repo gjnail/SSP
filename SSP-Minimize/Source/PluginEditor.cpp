@@ -3,7 +3,7 @@
 namespace
 {
 constexpr int editorWidth = 980;
-constexpr int editorHeight = 660;
+constexpr int editorHeight = 740;
 
 juce::Path createBrandGlyph(juce::Rectangle<float> area)
 {
@@ -125,7 +125,7 @@ void PluginEditor::resized()
     hintLabel.setBounds(titleArea.removeFromTop(20));
 
     area.removeFromTop(10);
-    response.setBounds(area.removeFromTop(270));
+    response.setBounds(area.removeFromTop(246));
     area.removeFromTop(16);
     controls.setBounds(area);
 }

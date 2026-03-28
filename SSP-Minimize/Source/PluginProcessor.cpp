@@ -23,6 +23,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("attack", "Attack", juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.18f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("release", "Release", juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.52f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.85f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("soloDifference", "Solo Difference", false));
 
     return { params.begin(), params.end() };
 }
@@ -50,6 +51,7 @@ void PluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     {
         band.envelopes = { 0.0f, 0.0f };
         band.attenuationForUi = 0.0f;
+        band.differenceForUi = 0.0f;
 
         for (auto& filter : band.filters)
         {
@@ -117,6 +119,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     const auto threshold = juce::jmap(sensitivity, 0.010f, 0.220f);
     const auto curve = juce::jmap(sharpness, 1.0f, 3.8f);
     const auto maxCut = juce::jmap(depth, 0.0f, 0.88f);
+    const auto soloDifference = getValue(apvts, "soloDifference") > 0.5f;
     const auto attackSeconds = juce::jmax(0.001f, attack);
     const auto releaseSeconds = juce::jmax(0.001f, release);
     const auto attackCoeff = std::exp(-1.0 / ((double) attackSeconds * currentSampleRate));
@@ -131,7 +134,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     mixSmoothed.setTargetValue(juce::jlimit(0.0f, 1.0f, getValue(apvts, "mix")));
 
     for (auto& band : bands)
+    {
         band.attenuationForUi = 0.0f;
+        band.differenceForUi = 0.0f;
+    }
 
     for (int channel = 0; channel < numChannels; ++channel)
     {
@@ -154,13 +160,17 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
                 const auto over = juce::jmax(0.0f, envelope - threshold);
                 const auto normalised = juce::jlimit(0.0f, 1.0f, over / juce::jmax(0.0001f, 1.0f - threshold));
                 const auto attenuation = juce::jlimit(0.0f, maxCut, std::pow(normalised, curve) * maxCut);
-                processed -= filtered * attenuation;
+                const auto differenceContribution = filtered * attenuation;
+                processed -= differenceContribution;
                 band.attenuationForUi = juce::jmax(band.attenuationForUi, attenuation);
+                band.differenceForUi = juce::jmax(band.differenceForUi,
+                                                  juce::jlimit(0.0f, 1.0f, std::abs(differenceContribution) / juce::jmax(0.001f, threshold)));
             }
 
             const auto output = juce::jlimit(-1.0f, 1.0f, processed);
             const auto mix = juce::jlimit(0.0f, 1.0f, mixSmoothed.getNextValue());
-            out[sample] = input * (1.0f - mix) + output * mix;
+            const auto blended = input * (1.0f - mix) + output * mix;
+            out[sample] = soloDifference ? juce::jlimit(-1.0f, 1.0f, input - blended) : blended;
         }
     }
 
@@ -189,9 +199,18 @@ std::array<PluginProcessor::BandVisual, PluginProcessor::numBands> PluginProcess
     {
         result[i].centreHz = bands[i].centreHz;
         result[i].attenuation = bands[i].attenuationForUi;
+        result[i].differenceLevel = bands[i].differenceForUi;
     }
 
     return result;
+}
+
+bool PluginProcessor::isSoloDifferenceEnabled() const
+{
+    if (auto* value = apvts.getRawParameterValue("soloDifference"))
+        return value->load() > 0.5f;
+
+    return false;
 }
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()

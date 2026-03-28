@@ -14,7 +14,7 @@ juce_add_plugin(SSPEQ
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
-    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD TRUE
     PLUGIN_MANUFACTURER_CODE Ssp1
     PLUGIN_CODE Sseq
@@ -30,6 +30,10 @@ target_sources(SSPEQ
         Source/PluginEditor.cpp
         Source/EqGraphComponent.cpp
         Source/EqControlsComponent.cpp
+        Source/PresetBrowserComponent.cpp
+        Source/EQPresetLibrary.cpp
+        Source/MusicNoteUtils.cpp
+        Source/SSPVectorUI.cpp
 )
 
 target_compile_definitions(SSPEQ
