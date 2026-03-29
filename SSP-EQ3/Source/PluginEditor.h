@@ -17,15 +17,10 @@ public:
     void resized() override;
 
 private:
-    using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
-
-    PluginProcessor& pluginProcessor;
     EQ3GraphComponent graph;
     EQ3ControlsComponent controls;
-    eq3ui::SSPToggle powerToggle{"POWER"};
     juce::Label titleLabel;
     juce::Label tagLabel;
-    std::unique_ptr<ButtonAttachment> powerAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditor)
 };

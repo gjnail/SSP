@@ -1,27 +1,18 @@
 #pragma once
 
 #include <array>
-#include <complex>
 #include <limits>
 #include <JuceHeader.h>
 
 class PluginProcessor final : public juce::AudioProcessor
 {
 public:
-    struct BiquadCoefficients
-    {
-        double b0 = 1.0;
-        double b1 = 0.0;
-        double b2 = 0.0;
-        double a1 = 0.0;
-        double a2 = 0.0;
-    };
-
-    static constexpr float minGainDb = -12.0f;
+    static constexpr float minGainDb = -96.0f;
     static constexpr float maxGainDb = 12.0f;
     static constexpr float lowShelfFrequencyHz = 200.0f;
     static constexpr float midFrequencyHz = 1000.0f;
     static constexpr float midQ = 0.7f;
+    static constexpr float shelfQ = 0.70710678f;
     static constexpr float highShelfFrequencyHz = 5000.0f;
 
     PluginProcessor();
@@ -56,42 +47,22 @@ public:
 
     double getResponseForFrequency(double frequency) const;
     double getCurrentSampleRate() const noexcept { return currentSampleRate; }
-    bool isPoweredOn() const;
 
-    static BiquadCoefficients makeLowShelfCoefficients(double sampleRate, double frequency, double gainDb);
-    static BiquadCoefficients makePeakCoefficients(double sampleRate, double frequency, double q, double gainDb);
-    static BiquadCoefficients makeHighShelfCoefficients(double sampleRate, double frequency, double gainDb);
-    static double getMagnitudeForFrequency(const BiquadCoefficients& coefficients, double frequency, double sampleRate);
+    static juce::IIRCoefficients makeLowShelfCoefficients(double sampleRate, double frequency, double gainDb);
+    static juce::IIRCoefficients makePeakCoefficients(double sampleRate, double frequency, double q, double gainDb);
+    static juce::IIRCoefficients makeHighShelfCoefficients(double sampleRate, double frequency, double gainDb);
+    static double getMagnitudeForFrequency(const juce::IIRCoefficients& coefficients, double frequency, double sampleRate);
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     float getParameterValue(const juce::String& parameterId) const;
+    void updateFilterCoefficients(float lowGainDb, float midGainDb, float highGainDb);
 
-    struct BiquadState
-    {
-        double z1 = 0.0;
-        double z2 = 0.0;
-
-        void reset() noexcept
-        {
-            z1 = 0.0;
-            z2 = 0.0;
-        }
-
-        float processSample(float input, const BiquadCoefficients& coefficients) noexcept
-        {
-            const double output = coefficients.b0 * input + z1;
-            z1 = coefficients.b1 * input - coefficients.a1 * output + z2;
-            z2 = coefficients.b2 * input - coefficients.a2 * output;
-            return (float) output;
-        }
-    };
-
-    std::array<std::array<BiquadState, 2>, 3> filterStates{};
+    std::array<std::array<juce::IIRFilter, 2>, 3> filters{};
+    std::array<juce::IIRCoefficients, 3> currentCoefficients{};
     juce::SmoothedValue<float> lowGainSmoothed;
     juce::SmoothedValue<float> midGainSmoothed;
     juce::SmoothedValue<float> highGainSmoothed;
-    juce::SmoothedValue<float> powerMixSmoothed;
     double currentSampleRate = 44100.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
