@@ -2,16 +2,24 @@
 
 namespace
 {
-juce::Colour panelOutline() { return juce::Colour(0xff3e3f54); }
-juce::Colour subtleText() { return juce::Colour(0xffc4c7d8); }
-juce::Colour silver() { return juce::Colour(0xffdce5f3); }
-juce::Colour cyan() { return juce::Colour(0xff7ad2ff); }
-juce::Colour aqua() { return juce::Colour(0xff67f0d5); }
-juce::Colour amber() { return juce::Colour(0xffffc97a); }
+using Formatter = std::function<juce::String(double)>;
+
+juce::Colour accentSky() { return ssp::ui::brandCyan(); }
+juce::Colour accentMint() { return ssp::ui::brandMint(); }
+juce::Colour accentGold() { return ssp::ui::brandGold(); }
+juce::Colour accentAmber() { return juce::Colour(0xffffad72); }
+juce::Colour accentRose() { return juce::Colour(0xffff7f88); }
+juce::Colour plotFill() { return juce::Colour(0xcc081018); }
 
 juce::String formatPercent(double value)
 {
     return juce::String(juce::roundToInt((float) value * 100.0f)) + "%";
+}
+
+juce::String formatSignedPercent(double value)
+{
+    const int rounded = juce::roundToInt((float) value);
+    return (rounded > 0 ? "+" : "") + juce::String(rounded) + "%";
 }
 
 juce::String formatDecibels(double value)
@@ -21,254 +29,388 @@ juce::String formatDecibels(double value)
 
 juce::String formatRate(double value)
 {
-    static const juce::StringArray labels {"1/32", "1/16T", "1/16", "1/8T", "1/8", "1/4T", "1/4", "1/2", "1 Bar", "2 Bar", "4 Bar"};
-    const int index = juce::jlimit(0, labels.size() - 1, juce::roundToInt((float) value));
-    return labels[index];
+    return PluginProcessor::getRateLabel(juce::roundToInt((float) value));
+}
+
+double getParameterDefaultValue(juce::AudioProcessorValueTreeState& state, const juce::String& parameterID)
+{
+    if (auto* parameter = state.getParameter(parameterID))
+        return parameter->convertFrom0to1(parameter->getDefaultValue());
+
+    return 0.0;
+}
+
+void drawLegendSwatch(juce::Graphics& g, juce::Rectangle<float> area, juce::Colour colour, const juce::String& label)
+{
+    auto swatch = area.removeFromLeft(20.0f).withTrimmedTop(6.0f).withTrimmedBottom(6.0f);
+    g.setColour(colour);
+    g.fillRoundedRectangle(swatch, 3.0f);
+    g.setColour(ssp::ui::textMuted());
+    g.setFont(11.0f);
+    g.drawText(label, area.toNearestInt(), juce::Justification::centredLeft, false);
 }
 } // namespace
 
-class GodKnobLookAndFeel final : public juce::LookAndFeel_V4
+class HihatGodControlsComponent::HihatKnobPanel final : public juce::Component
 {
 public:
-    explicit GodKnobLookAndFeel(bool heroStyle)
-        : hero(heroStyle)
-    {
-    }
-
-    void drawRotarySlider(juce::Graphics& g,
-                          int x,
-                          int y,
-                          int width,
-                          int height,
-                          float sliderPosProportional,
-                          float rotaryStartAngle,
-                          float rotaryEndAngle,
-                          juce::Slider&) override
-    {
-        const auto bounds = juce::Rectangle<float>((float) x, (float) y, (float) width, (float) height).reduced(hero ? 8.0f : 10.0f);
-        const auto centre = bounds.getCentre();
-        const auto radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.5f;
-        const auto angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
-        const float stroke = hero ? juce::jmax(13.0f, radius * 0.13f) : juce::jmax(8.0f, radius * 0.11f);
-
-        g.setColour(juce::Colours::black.withAlpha(hero ? 0.26f : 0.18f));
-        g.fillEllipse(bounds.translated(0.0f, hero ? 9.0f : 6.0f));
-
-        juce::ColourGradient halo(cyan().withAlpha(hero ? 0.26f : 0.18f), centre.x, bounds.getBottom(),
-                                  aqua().withAlpha(hero ? 0.16f : 0.11f), centre.x, bounds.getY(), false);
-        g.setGradientFill(halo);
-        g.fillEllipse(bounds.expanded(hero ? 10.0f : 6.0f));
-
-        juce::ColourGradient shell(juce::Colour(0xff252a35), centre.x, bounds.getY(),
-                                   juce::Colour(0xff12141b), centre.x, bounds.getBottom(), false);
-        shell.addColour(0.35, juce::Colour(0xff1b1f28));
-        g.setGradientFill(shell);
-        g.fillEllipse(bounds);
-
-        juce::Path baseArc;
-        const auto arcBounds = bounds.reduced(radius * 0.08f);
-        baseArc.addCentredArc(centre.x, centre.y,
-                              arcBounds.getWidth() * 0.5f,
-                              arcBounds.getHeight() * 0.5f,
-                              0.0f,
-                              rotaryStartAngle,
-                              rotaryEndAngle,
-                              true);
-        g.setColour(juce::Colour(0xff0d1016));
-        g.strokePath(baseArc, juce::PathStrokeType(stroke, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-        juce::Path valueArc;
-        valueArc.addCentredArc(centre.x, centre.y,
-                               arcBounds.getWidth() * 0.5f,
-                               arcBounds.getHeight() * 0.5f,
-                               0.0f,
-                               rotaryStartAngle,
-                               angle,
-                               true);
-        juce::ColourGradient accent(aqua(), arcBounds.getBottomLeft(), cyan(), arcBounds.getTopRight(), false);
-        g.setGradientFill(accent);
-        g.strokePath(valueArc, juce::PathStrokeType(stroke, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-        auto cap = bounds.reduced(radius * (hero ? 0.30f : 0.33f));
-        juce::ColourGradient capFill(juce::Colour(0xff181b24), cap.getCentreX(), cap.getY(),
-                                     juce::Colour(0xff222735), cap.getCentreX(), cap.getBottom(), false);
-        g.setGradientFill(capFill);
-        g.fillEllipse(cap);
-
-        juce::Path pointer;
-        const float pointerLength = radius * (hero ? 0.55f : 0.48f);
-        const float pointerThickness = hero ? 8.0f : 5.5f;
-        pointer.addRoundedRectangle(-pointerThickness * 0.5f, -pointerLength, pointerThickness, pointerLength, pointerThickness * 0.5f);
-        g.setColour(silver());
-        g.fillPath(pointer, juce::AffineTransform::rotation(angle).translated(centre.x, centre.y));
-
-        g.setColour(juce::Colour(0xff12151c));
-        g.fillEllipse(juce::Rectangle<float>(radius * 0.28f, radius * 0.28f).withCentre(centre));
-    }
-
-private:
-    bool hero = false;
-};
-
-class HihatGodControlsComponent::GodKnob final : public juce::Component
-{
-public:
-    using Formatter = std::function<juce::String(double)>;
-
-    GodKnob(juce::AudioProcessorValueTreeState& state,
-            const juce::String& paramId,
-            const juce::String& heading,
-            const juce::String& caption,
-            Formatter formatterToUse,
-            bool heroStyle)
-        : lookAndFeel(heroStyle),
-          attachment(state, paramId, slider),
-          formatter(std::move(formatterToUse)),
-          hero(heroStyle)
+    HihatKnobPanel(juce::AudioProcessorValueTreeState& state,
+                   const juce::String& parameterID,
+                   const juce::String& title,
+                   const juce::String& caption,
+                   juce::Colour accentColour,
+                   Formatter formatterToUse)
+        : accent(accentColour),
+          attachment(state, parameterID, slider),
+          formatter(std::move(formatterToUse))
     {
         addAndMakeVisible(titleLabel);
-        addAndMakeVisible(valueLabel);
         addAndMakeVisible(captionLabel);
         addAndMakeVisible(slider);
 
-        titleLabel.setText(heading, juce::dontSendNotification);
-        titleLabel.setJustificationType(juce::Justification::centred);
-        titleLabel.setFont(juce::Font(hero ? 30.0f : 18.0f, juce::Font::bold));
-        titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-
-        valueLabel.setJustificationType(juce::Justification::centred);
-        valueLabel.setFont(juce::Font(hero ? 23.0f : 15.0f, juce::Font::bold));
-        valueLabel.setColour(juce::Label::textColourId, cyan());
+        titleLabel.setText(title, juce::dontSendNotification);
+        titleLabel.setJustificationType(juce::Justification::centredLeft);
+        titleLabel.setColour(juce::Label::textColourId, ssp::ui::textStrong());
+        titleLabel.setFont(juce::Font(13.0f, juce::Font::bold));
 
         captionLabel.setText(caption, juce::dontSendNotification);
-        captionLabel.setJustificationType(juce::Justification::centred);
-        captionLabel.setFont(juce::Font(11.3f));
-        captionLabel.setColour(juce::Label::textColourId, subtleText());
+        captionLabel.setJustificationType(juce::Justification::centredLeft);
+        captionLabel.setColour(juce::Label::textColourId, ssp::ui::textMuted());
+        captionLabel.setFont(juce::Font(11.4f));
 
-        slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-        slider.setLookAndFeel(&lookAndFeel);
-        slider.onValueChange = [this] { refreshValueText(); };
-
-        refreshValueText();
-    }
-
-    ~GodKnob() override
-    {
-        slider.setLookAndFeel(nullptr);
+        slider.setName(title);
+        slider.setColour(juce::Slider::rotarySliderFillColourId, accent);
+        slider.setColour(juce::Slider::thumbColourId, accent.brighter(0.28f));
+        slider.setDoubleClickReturnValue(true, getParameterDefaultValue(state, parameterID));
+        slider.textFromValueFunction = [formatterToUse](double value)
+        {
+            return formatterToUse != nullptr ? formatterToUse(value) : juce::String(value, 2);
+        };
+        slider.valueFromTextFunction = [this](const juce::String& text)
+        {
+            const auto sanitized = text.retainCharacters("0123456789+-.");
+            const auto parsed = sanitized.isNotEmpty() ? sanitized.getDoubleValue() : slider.getValue();
+            return juce::jlimit(slider.getMinimum(), slider.getMaximum(), parsed);
+        };
     }
 
     void paint(juce::Graphics& g) override
     {
-        auto area = getLocalBounds().toFloat();
-        juce::ColourGradient fill(hero ? juce::Colour(0xff181c25) : juce::Colour(0xff171922),
-                                  area.getTopLeft(),
-                                  juce::Colour(0xff11131a),
-                                  area.getBottomRight(),
-                                  false);
-        fill.addColour(0.46, juce::Colour(0xff1d2230));
-        g.setGradientFill(fill);
-        g.fillRoundedRectangle(area, hero ? 28.0f : 20.0f);
-
-        auto accent = area.reduced(hero ? 24.0f : 18.0f, hero ? 16.0f : 14.0f).removeFromTop(5.0f);
-        juce::ColourGradient accentFill(aqua().withAlpha(0.60f), accent.getX(), accent.getCentreY(),
-                                        cyan().withAlpha(0.76f), accent.getRight(), accent.getCentreY(), false);
-        g.setGradientFill(accentFill);
-        g.fillRoundedRectangle(accent.withTrimmedLeft(accent.getWidth() * 0.18f).withTrimmedRight(accent.getWidth() * 0.18f), 3.0f);
-
-        g.setColour(panelOutline());
-        g.drawRoundedRectangle(area.reduced(0.5f), hero ? 28.0f : 20.0f, 1.0f);
+        ssp::ui::drawPanelBackground(g, getLocalBounds().toFloat(), accent, 18.0f);
     }
 
     void resized() override
     {
-        auto area = getLocalBounds().reduced(hero ? 22 : 16, hero ? 18 : 14);
-        titleLabel.setBounds(area.removeFromTop(hero ? 38 : 24));
-        valueLabel.setBounds(area.removeFromTop(hero ? 30 : 22));
-        captionLabel.setBounds(area.removeFromBottom(24));
-        area.removeFromBottom(hero ? 8 : 6);
-
-        const auto knobSize = juce::jmin(area.getWidth(), area.getHeight());
-        slider.setBounds(area.withSizeKeepingCentre(knobSize, knobSize));
+        auto area = getLocalBounds().reduced(18, 16);
+        titleLabel.setBounds(area.removeFromTop(18));
+        auto captionArea = area.removeFromBottom(44);
+        slider.setBounds(area.reduced(6, 2));
+        captionLabel.setBounds(captionArea);
     }
 
 private:
-    void refreshValueText()
-    {
-        valueLabel.setText(formatter != nullptr ? formatter(slider.getValue()) : juce::String(slider.getValue(), 2),
-                           juce::dontSendNotification);
-    }
-
-    GodKnobLookAndFeel lookAndFeel;
+    juce::Colour accent;
     juce::Label titleLabel;
-    juce::Label valueLabel;
     juce::Label captionLabel;
-    juce::Slider slider;
+    ssp::ui::SSPKnob slider;
     juce::AudioProcessorValueTreeState::SliderAttachment attachment;
     Formatter formatter;
-    bool hero = false;
+};
+
+class HihatGodControlsComponent::MotionVisualizer final : public juce::Component
+{
+public:
+    explicit MotionVisualizer(PluginProcessor& p)
+        : processor(p)
+    {
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        auto bounds = getLocalBounds().toFloat();
+        ssp::ui::drawPanelBackground(g, bounds, accentSky(), 20.0f);
+
+        auto area = bounds.reduced(18.0f, 18.0f);
+        auto header = area.removeFromTop(22.0f);
+        g.setColour(ssp::ui::textStrong());
+        g.setFont(juce::Font(13.0f, juce::Font::bold));
+        g.drawText("BEFORE / AFTER DIFFERENCE", header.toNearestInt(), juce::Justification::centredLeft, false);
+        g.setColour(ssp::ui::textMuted());
+        g.setFont(juce::Font(12.0f));
+        g.drawText("Input/output envelope delta plus the live gain and pan modulation driving the effect.",
+                   juce::Rectangle<int>((int) header.getRight() - 420, (int) header.getY(), 420, (int) header.getHeight()),
+                   juce::Justification::centredRight,
+                   false);
+
+        auto legend = area.removeFromTop(18.0f);
+        auto legendLeft = legend.removeFromLeft(300.0f);
+        drawLegendSwatch(g, legendLeft.removeFromLeft(96.0f), juce::Colour(0xff8ea1b8), "Before");
+        drawLegendSwatch(g, legendLeft.removeFromLeft(96.0f), accentSky(), "After");
+        drawLegendSwatch(g, legendLeft.removeFromLeft(108.0f), accentAmber(), "Delta");
+
+        auto meta = legend.removeFromRight(250.0f);
+        g.setColour(ssp::ui::textMuted());
+        g.setFont(11.0f);
+        g.drawFittedText("Gain " + formatDecibels(processor.getCurrentGainOffsetDb())
+                             + "    Pan " + formatSignedPercent(processor.getCurrentPanOffset() * 100.0f),
+                         meta.toNearestInt(), juce::Justification::centredRight, 1);
+
+        area.removeFromTop(8.0f);
+        auto mainPlot = area.removeFromTop(area.getHeight() * 0.62f);
+        area.removeFromTop(10.0f);
+        auto gainPlot = area.removeFromTop(46.0f);
+        area.removeFromTop(8.0f);
+        auto panPlot = area.removeFromTop(46.0f);
+
+        const auto data = processor.getVisualizerData();
+        drawEnvelopePlot(g, mainPlot, data);
+        drawMotionStrip(g, gainPlot, data.gainMotion, accentGold(), "GAIN LFO", formatDecibels(processor.getCurrentGainOffsetDb()));
+        drawMotionStrip(g, panPlot, data.panMotion, accentMint(), "PAN LFO", formatSignedPercent(processor.getCurrentPanOffset() * 100.0f));
+    }
+
+private:
+    static void drawPlotFrame(juce::Graphics& g, juce::Rectangle<float> bounds, bool signedData)
+    {
+        g.setColour(plotFill());
+        g.fillRoundedRectangle(bounds, 12.0f);
+        g.setColour(juce::Colour(0x28ffffff));
+        g.drawRoundedRectangle(bounds, 12.0f, 1.0f);
+
+        for (int i = 1; i < 8; ++i)
+        {
+            const float x = juce::jmap((float) i, 0.0f, 8.0f, bounds.getX(), bounds.getRight());
+            g.setColour(juce::Colour(0x14ffffff));
+            g.drawVerticalLine((int) std::round(x), bounds.getY() + 8.0f, bounds.getBottom() - 8.0f);
+        }
+
+        const int horizontalLines = signedData ? 4 : 3;
+        for (int i = 0; i <= horizontalLines; ++i)
+        {
+            const float y = juce::jmap((float) i, 0.0f, (float) horizontalLines, bounds.getY() + 8.0f, bounds.getBottom() - 8.0f);
+            g.setColour(juce::Colour(0x14ffffff));
+            g.drawHorizontalLine((int) std::round(y), bounds.getX() + 8.0f, bounds.getRight() - 8.0f);
+        }
+
+        if (signedData)
+        {
+            g.setColour(juce::Colour(0x36ffffff));
+            g.drawHorizontalLine((int) std::round(bounds.getCentreY()), bounds.getX() + 6.0f, bounds.getRight() - 6.0f);
+        }
+    }
+
+    static juce::Path buildPositivePath(const std::array<float, PluginProcessor::visualizerPointCount>& series,
+                                        juce::Rectangle<float> bounds)
+    {
+        juce::Path path;
+        for (int i = 0; i < PluginProcessor::visualizerPointCount; ++i)
+        {
+            const float x = juce::jmap((float) i, 0.0f, (float) (PluginProcessor::visualizerPointCount - 1), bounds.getX(), bounds.getRight());
+            const float y = juce::jmap(series[(size_t) i], 0.0f, 1.0f, bounds.getBottom() - 8.0f, bounds.getY() + 8.0f);
+            if (i == 0)
+                path.startNewSubPath(x, y);
+            else
+                path.lineTo(x, y);
+        }
+        return path;
+    }
+
+    static juce::Path buildPositiveFill(const std::array<float, PluginProcessor::visualizerPointCount>& series,
+                                        juce::Rectangle<float> bounds)
+    {
+        juce::Path path;
+        path.startNewSubPath(bounds.getX(), bounds.getBottom() - 8.0f);
+        for (int i = 0; i < PluginProcessor::visualizerPointCount; ++i)
+        {
+            const float x = juce::jmap((float) i, 0.0f, (float) (PluginProcessor::visualizerPointCount - 1), bounds.getX(), bounds.getRight());
+            const float y = juce::jmap(series[(size_t) i], 0.0f, 1.0f, bounds.getBottom() - 8.0f, bounds.getY() + 8.0f);
+            path.lineTo(x, y);
+        }
+        path.lineTo(bounds.getRight(), bounds.getBottom() - 8.0f);
+        path.closeSubPath();
+        return path;
+    }
+
+    static juce::Path buildSignedPath(const std::array<float, PluginProcessor::visualizerPointCount>& series,
+                                      juce::Rectangle<float> bounds)
+    {
+        juce::Path path;
+        for (int i = 0; i < PluginProcessor::visualizerPointCount; ++i)
+        {
+            const float x = juce::jmap((float) i, 0.0f, (float) (PluginProcessor::visualizerPointCount - 1), bounds.getX(), bounds.getRight());
+            const float y = juce::jmap(series[(size_t) i], -1.0f, 1.0f, bounds.getBottom() - 8.0f, bounds.getY() + 8.0f);
+            if (i == 0)
+                path.startNewSubPath(x, y);
+            else
+                path.lineTo(x, y);
+        }
+        return path;
+    }
+
+    static juce::Path buildSignedFill(const std::array<float, PluginProcessor::visualizerPointCount>& series,
+                                      juce::Rectangle<float> bounds)
+    {
+        juce::Path path;
+        const float centreY = bounds.getCentreY();
+        path.startNewSubPath(bounds.getX(), centreY);
+        for (int i = 0; i < PluginProcessor::visualizerPointCount; ++i)
+        {
+            const float x = juce::jmap((float) i, 0.0f, (float) (PluginProcessor::visualizerPointCount - 1), bounds.getX(), bounds.getRight());
+            const float y = juce::jmap(series[(size_t) i], -1.0f, 1.0f, bounds.getBottom() - 8.0f, bounds.getY() + 8.0f);
+            path.lineTo(x, y);
+        }
+        path.lineTo(bounds.getRight(), centreY);
+        path.closeSubPath();
+        return path;
+    }
+
+    static void drawEnvelopePlot(juce::Graphics& g, juce::Rectangle<float> bounds, const PluginProcessor::VisualizerData& data)
+    {
+        drawPlotFrame(g, bounds, false);
+
+        auto deltaFill = buildPositiveFill(data.difference, bounds);
+        juce::ColourGradient deltaGradient(accentAmber().withAlpha(0.28f), bounds.getX(), bounds.getY(),
+                                           accentRose().withAlpha(0.08f), bounds.getRight(), bounds.getBottom(), false);
+        g.setGradientFill(deltaGradient);
+        g.fillPath(deltaFill);
+
+        auto beforePath = buildPositivePath(data.input, bounds);
+        g.setColour(juce::Colour(0xff8ea1b8));
+        g.strokePath(beforePath, juce::PathStrokeType(1.7f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        auto afterPath = buildPositivePath(data.output, bounds);
+        juce::ColourGradient afterGradient(accentSky(), bounds.getX(), bounds.getCentreY(),
+                                           accentMint(), bounds.getRight(), bounds.getY(), false);
+        g.setGradientFill(afterGradient);
+        g.strokePath(afterPath, juce::PathStrokeType(2.3f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+
+    static void drawMotionStrip(juce::Graphics& g,
+                                juce::Rectangle<float> bounds,
+                                const std::array<float, PluginProcessor::visualizerPointCount>& series,
+                                juce::Colour accent,
+                                const juce::String& title,
+                                const juce::String& value)
+    {
+        drawPlotFrame(g, bounds, true);
+
+        auto fill = buildSignedFill(series, bounds);
+        g.setColour(accent.withAlpha(0.18f));
+        g.fillPath(fill);
+
+        auto path = buildSignedPath(series, bounds);
+        g.setColour(accent);
+        g.strokePath(path, juce::PathStrokeType(1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        auto overlay = bounds.reduced(12.0f, 6.0f);
+        auto labelRow = overlay.removeFromTop(14.0f);
+        g.setColour(ssp::ui::textMuted());
+        g.setFont(11.0f);
+        g.drawText(title, labelRow.toNearestInt(), juce::Justification::centredLeft, false);
+        g.setColour(ssp::ui::textStrong());
+        g.drawText(value, labelRow.toNearestInt(), juce::Justification::centredRight, false);
+    }
+
+    PluginProcessor& processor;
 };
 
 HihatGodControlsComponent::HihatGodControlsComponent(PluginProcessor& p, juce::AudioProcessorValueTreeState& state)
     : processor(p),
-      apvts(state)
+      apvts(state),
+      presetBrowser(p)
 {
-    summaryLabel.setText("Host-synced sine-LFO gain and pan motion for hi-hats so repeated patterns feel less robotic and more played.",
-                         juce::dontSendNotification);
-    summaryLabel.setFont(juce::Font(13.0f));
-    summaryLabel.setColour(juce::Label::textColourId, subtleText());
-    summaryLabel.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(summaryLabel);
+    for (auto* label : { &eyebrowLabel, &titleLabel, &subtitleLabel, &presetLabel, &presetMetaLabel, &statusLabel })
+        addAndMakeVisible(*label);
 
-    badgeLabel.setText("HAT MOTION", juce::dontSendNotification);
-    badgeLabel.setFont(juce::Font(11.0f, juce::Font::bold));
-    badgeLabel.setJustificationType(juce::Justification::centred);
-    badgeLabel.setColour(juce::Label::textColourId, juce::Colours::black);
-    badgeLabel.setColour(juce::Label::backgroundColourId, amber());
-    badgeLabel.setColour(juce::Label::outlineColourId, juce::Colour(0xff584c31));
-    addAndMakeVisible(badgeLabel);
+    for (auto* button : { static_cast<juce::Component*>(&previousPresetButton),
+                          static_cast<juce::Component*>(&presetButton),
+                          static_cast<juce::Component*>(&nextPresetButton) })
+    {
+        addAndMakeVisible(*button);
+    }
 
-    currentGainLabel.setJustificationType(juce::Justification::centredLeft);
-    currentGainLabel.setFont(juce::Font(16.0f, juce::Font::bold));
-    currentGainLabel.setColour(juce::Label::textColourId, silver());
-    addAndMakeVisible(currentGainLabel);
+    eyebrowLabel.setText("HAT MOTION SYSTEM", juce::dontSendNotification);
+    eyebrowLabel.setFont(juce::Font(12.0f, juce::Font::bold));
+    eyebrowLabel.setColour(juce::Label::textColourId, accentMint());
+    eyebrowLabel.setJustificationType(juce::Justification::centredLeft);
 
-    currentPanLabel.setJustificationType(juce::Justification::centredLeft);
-    currentPanLabel.setFont(juce::Font(16.0f, juce::Font::bold));
-    currentPanLabel.setColour(juce::Label::textColourId, silver());
-    addAndMakeVisible(currentPanLabel);
+    titleLabel.setText("SSP Hihat God", juce::dontSendNotification);
+    titleLabel.setFont(juce::Font(34.0f, juce::Font::bold));
+    titleLabel.setColour(juce::Label::textColourId, ssp::ui::textStrong());
+    titleLabel.setJustificationType(juce::Justification::centredLeft);
 
-    variationKnob = std::make_unique<GodKnob>(state,
-                                              "variation",
-                                              "Variation",
-                                              "Scales both the gain sweep and stereo sweep.",
-                                              formatPercent,
-                                              true);
-    rateKnob = std::make_unique<GodKnob>(state,
-                                         "rateIndex",
-                                         "Rate",
-                                         "Cycles through host-synced modulation rates.",
-                                         formatRate,
-                                         false);
-    volumeRangeKnob = std::make_unique<GodKnob>(state,
-                                                "volumeRangeDb",
-                                                "Volume Range",
-                                                "Maximum gain swing across the sine cycle.",
-                                                formatDecibels,
-                                                false);
-    panRangeKnob = std::make_unique<GodKnob>(state,
-                                             "panRange",
-                                             "Pan Range",
-                                             "Maximum left-right move across the sine cycle.",
-                                             formatPercent,
-                                             false);
+    subtitleLabel.setText("Reactor and EQ-inspired vector UI for host-synced gain and stereo motion that keeps programmed hats feeling wider, looser, and less repetitive.",
+                          juce::dontSendNotification);
+    subtitleLabel.setFont(juce::Font(13.0f));
+    subtitleLabel.setColour(juce::Label::textColourId, ssp::ui::textMuted());
+    subtitleLabel.setJustificationType(juce::Justification::centredLeft);
 
-    addAndMakeVisible(*variationKnob);
-    addAndMakeVisible(*rateKnob);
-    addAndMakeVisible(*volumeRangeKnob);
-    addAndMakeVisible(*panRangeKnob);
+    presetLabel.setText("PRESET LIBRARY", juce::dontSendNotification);
+    presetLabel.setFont(juce::Font(11.5f, juce::Font::bold));
+    presetLabel.setColour(juce::Label::textColourId, ssp::ui::textStrong());
+    presetLabel.setJustificationType(juce::Justification::centredLeft);
 
-    refreshFromProcessor();
+    presetMetaLabel.setFont(juce::Font(11.0f));
+    presetMetaLabel.setColour(juce::Label::textColourId, ssp::ui::textMuted());
+    presetMetaLabel.setJustificationType(juce::Justification::centredLeft);
+
+    statusLabel.setFont(juce::Font(12.0f, juce::Font::bold));
+    statusLabel.setColour(juce::Label::textColourId, ssp::ui::brandGold());
+    statusLabel.setJustificationType(juce::Justification::centredRight);
+
+    previousPresetButton.onClick = [this]
+    {
+        processor.stepFactoryPreset(-1);
+        updateDynamicText();
+    };
+
+    presetButton.onClick = [this]
+    {
+        if (presetBrowser.isOpen())
+            presetBrowser.close();
+        else
+            presetBrowser.open();
+    };
+
+    nextPresetButton.onClick = [this]
+    {
+        processor.stepFactoryPreset(1);
+        updateDynamicText();
+    };
+
+    visualizer = std::make_unique<MotionVisualizer>(processor);
+    addAndMakeVisible(*visualizer);
+
+    variationKnob = std::make_unique<HihatKnobPanel>(state,
+                                                     "variation",
+                                                     "Variation",
+                                                     "Master depth for both gain and stereo motion.",
+                                                     accentSky(),
+                                                     formatPercent);
+    rateKnob = std::make_unique<HihatKnobPanel>(state,
+                                                "rateIndex",
+                                                "Rate",
+                                                "Host-synced timing for the movement cycle.",
+                                                accentGold(),
+                                                formatRate);
+    volumeRangeKnob = std::make_unique<HihatKnobPanel>(state,
+                                                       "volumeRangeDb",
+                                                       "Volume Range",
+                                                       "Maximum level swing applied across the cycle.",
+                                                       accentAmber(),
+                                                       formatDecibels);
+    panRangeKnob = std::make_unique<HihatKnobPanel>(state,
+                                                    "panRange",
+                                                    "Pan Range",
+                                                    "Maximum left-right image movement.",
+                                                    accentMint(),
+                                                    formatPercent);
+
+    for (auto* knob : { variationKnob.get(), rateKnob.get(), volumeRangeKnob.get(), panRangeKnob.get() })
+        addAndMakeVisible(*knob);
+
+    addAndMakeVisible(presetBrowser);
+
+    updateDynamicText();
     startTimerHz(24);
 }
 
@@ -277,68 +419,100 @@ HihatGodControlsComponent::~HihatGodControlsComponent()
     stopTimer();
 }
 
-void HihatGodControlsComponent::timerCallback()
-{
-    refreshFromProcessor();
-}
-
-void HihatGodControlsComponent::refreshFromProcessor()
-{
-    const float currentGain = processor.getCurrentGainOffsetDb();
-    const float currentPan = processor.getCurrentPanOffset();
-
-    currentGainLabel.setText("Current Gain Sweep: " + juce::String(currentGain, 1) + " dB", juce::dontSendNotification);
-    currentPanLabel.setText("Current Pan Sweep: " + juce::String(currentPan * 100.0f, 0) + "%", juce::dontSendNotification);
-}
-
 void HihatGodControlsComponent::paint(juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat();
-
-    juce::ColourGradient shell(juce::Colour(0xff13151d), bounds.getTopLeft(),
-                               juce::Colour(0xff0d1016), bounds.getBottomRight(),
-                               false);
-    shell.addColour(0.48, juce::Colour(0xff171b24));
-    g.setGradientFill(shell);
-    g.fillRoundedRectangle(bounds, 30.0f);
-
-    auto topGlow = bounds.reduced(24.0f, 16.0f).removeFromTop(110.0f);
-    juce::ColourGradient glow(cyan().withAlpha(0.16f), topGlow.getX(), topGlow.getY(),
-                              aqua().withAlpha(0.10f), topGlow.getRight(), topGlow.getBottom(), false);
-    g.setGradientFill(glow);
-    g.fillRoundedRectangle(topGlow, 22.0f);
-
-    g.setColour(panelOutline());
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 30.0f, 1.0f);
+    ssp::ui::drawEditorBackdrop(g, getLocalBounds().toFloat().reduced(6.0f));
 }
 
 void HihatGodControlsComponent::resized()
 {
-    auto area = getLocalBounds().reduced(22, 18);
+    auto area = getLocalBounds().reduced(24, 20);
 
-    auto topRow = area.removeFromTop(78);
-    summaryLabel.setBounds(topRow.removeFromTop(34));
+    auto header = area.removeFromTop(80);
+    auto headerLeft = header.removeFromLeft((int) std::round(header.getWidth() * 0.60f));
+    eyebrowLabel.setBounds(headerLeft.removeFromTop(16));
+    titleLabel.setBounds(headerLeft.removeFromTop(36));
+    subtitleLabel.setBounds(headerLeft);
 
-    auto lowerTop = topRow;
-    badgeLabel.setBounds(lowerTop.removeFromLeft(150).reduced(0, 2));
-    lowerTop.removeFromLeft(16);
-    currentGainLabel.setBounds(lowerTop.removeFromLeft(250));
-    currentPanLabel.setBounds(lowerTop.removeFromLeft(220));
+    auto headerRight = header.reduced(0, 4);
+    presetLabel.setBounds(headerRight.removeFromTop(16));
+    auto presetRow = headerRight.removeFromTop(32);
+    previousPresetButton.setBounds(presetRow.removeFromLeft(34).reduced(0, 2));
+    presetRow.removeFromLeft(6);
+    nextPresetButton.setBounds(presetRow.removeFromRight(34).reduced(0, 2));
+    presetRow.removeFromRight(6);
+    presetButton.setBounds(presetRow.reduced(0, 2));
+    presetMetaLabel.setBounds(headerRight.removeFromTop(18));
+    statusLabel.setBounds(headerRight);
+
+    area.removeFromTop(12);
+    visualizer->setBounds(area.removeFromTop((int) std::round(area.getHeight() * 0.56f)));
 
     area.removeFromTop(14);
+    auto knobArea = area;
+    const int gap = 14;
+    const int knobWidth = (knobArea.getWidth() - gap * 3) / 4;
+    variationKnob->setBounds(knobArea.removeFromLeft(knobWidth));
+    knobArea.removeFromLeft(gap);
+    rateKnob->setBounds(knobArea.removeFromLeft(knobWidth));
+    knobArea.removeFromLeft(gap);
+    volumeRangeKnob->setBounds(knobArea.removeFromLeft(knobWidth));
+    knobArea.removeFromLeft(gap);
+    panRangeKnob->setBounds(knobArea);
 
-    auto heroArea = area.removeFromLeft((int) std::round(area.getWidth() * 0.40f));
-    area.removeFromLeft(18);
-    auto rightArea = area;
+    presetBrowser.setBounds(getLocalBounds());
+    presetBrowser.setAnchorBounds(presetButton.getBounds());
+}
 
-    variationKnob->setBounds(heroArea);
+bool HihatGodControlsComponent::handleKeyPress(const juce::KeyPress& key)
+{
+    if (presetBrowser.handleKeyPress(key))
+        return true;
 
-    auto topRight = rightArea.removeFromTop((int) std::round(rightArea.getHeight() * 0.48f));
-    rateKnob->setBounds(topRight);
-    rightArea.removeFromTop(18);
+    if (key == juce::KeyPress::leftKey)
+    {
+        processor.stepFactoryPreset(-1);
+        return true;
+    }
 
-    auto bottomLeft = rightArea.removeFromLeft((rightArea.getWidth() - 18) / 2);
-    volumeRangeKnob->setBounds(bottomLeft);
-    rightArea.removeFromLeft(18);
-    panRangeKnob->setBounds(rightArea);
+    if (key == juce::KeyPress::rightKey)
+    {
+        processor.stepFactoryPreset(1);
+        return true;
+    }
+
+    if (key.getTextCharacter() == 'p' || key.getTextCharacter() == 'P')
+    {
+        if (presetBrowser.isOpen())
+            presetBrowser.close();
+        else
+            presetBrowser.open();
+        return true;
+    }
+
+    return false;
+}
+
+void HihatGodControlsComponent::timerCallback()
+{
+    updateDynamicText();
+    visualizer->repaint();
+}
+
+void HihatGodControlsComponent::updateDynamicText()
+{
+    auto presetName = processor.getCurrentPresetName();
+    if (processor.isCurrentPresetDirty())
+        presetName << " *";
+    presetButton.setButtonText(presetName);
+
+    presetMetaLabel.setText("CATEGORY  " + processor.getCurrentPresetCategory().toUpperCase()
+                                + "    TAGS  " + processor.getCurrentPresetTags().toUpperCase(),
+                            juce::dontSendNotification);
+
+    const auto rateIndex = juce::roundToInt(apvts.getRawParameterValue("rateIndex")->load());
+    statusLabel.setText("GAIN " + formatDecibels(processor.getCurrentGainOffsetDb())
+                            + "    PAN " + formatSignedPercent(processor.getCurrentPanOffset() * 100.0f)
+                            + "    RATE " + PluginProcessor::getRateLabel(rateIndex).toUpperCase(),
+                        juce::dontSendNotification);
 }
