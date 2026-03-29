@@ -42,6 +42,28 @@ PresetBand band(const char* type, float frequency, float gain = 0.0f, float q = 
     return item;
 }
 
+bool presetBandSupportsDynamicGain(const PresetBand& bandData)
+{
+    return bandData.type == "bell"
+        || bandData.type == "lowshelf"
+        || bandData.type == "highshelf"
+        || bandData.type == "tiltshelf";
+}
+
+void applyDynamicDefaults(PresetBand& bandData)
+{
+    if (! presetBandSupportsDynamicGain(bandData) || std::abs(bandData.gain) < 0.01f)
+        return;
+
+    bandData.dynamicEnabled = true;
+    bandData.dynamicThresholdDb = bandData.gain < 0.0f ? -26.0f : -34.0f;
+    bandData.dynamicRatio = bandData.gain < 0.0f ? 4.5f : 3.0f;
+    bandData.dynamicAttackMs = bandData.gain < 0.0f ? 8.0f : 18.0f;
+    bandData.dynamicReleaseMs = bandData.gain < 0.0f ? 110.0f : 180.0f;
+    bandData.dynamicDirection = bandData.gain < 0.0f ? "above" : "below";
+    bandData.dynamicRangeDb = std::abs(bandData.gain);
+}
+
 PresetRecord preset(const juce::String& name, const juce::String& category, std::initializer_list<PresetBand> bands)
 {
     PresetRecord item;
@@ -51,7 +73,12 @@ PresetRecord preset(const juce::String& name, const juce::String& category, std:
     item.author = "SSP Factory";
     item.isFactory = true;
     for (const auto& entry : bands)
-        item.bands.add(entry);
+    {
+        auto bandData = entry;
+        if (category.startsWithIgnoreCase("Dynamic/"))
+            applyDynamicDefaults(bandData);
+        item.bands.add(bandData);
+    }
     return item;
 }
 

@@ -42,6 +42,7 @@ private:
     EqControlsComponent controls;
     PresetBrowserComponent presetBrowser;
     juce::Label titleLabel;
+    juce::Label phaseBadgeLabel;
     juce::Label hintLabel;
     ssp::ui::SSPButton compareAButton{"A"};
     ssp::ui::SSPButton compareCopyButton{"->"};
