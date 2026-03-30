@@ -4,12 +4,16 @@
 #include <atomic>
 #include <array>
 
-class PluginProcessor final : public juce::AudioProcessor
+class PluginProcessor final : public juce::AudioProcessor,
+                              private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     static constexpr int numBands = 4;
     static constexpr int numCrossovers = 3;
     static constexpr int vectorscopeSize = 2048;
+    static constexpr int learnFftOrder = 11;
+    static constexpr int learnFftSize = 1 << learnFftOrder;
+    static constexpr int learnHistogramBins = 96;
 
     struct BandMeter
     {
@@ -89,6 +93,13 @@ public:
 
     // Vectorscope access
     void getVectorscopeSnapshot(std::array<VectorscopePoint, vectorscopeSize>& dest) const;
+    int getVectorscopeWriteIndex() const noexcept { return vectorscopeWriteIndex.load(std::memory_order_relaxed); }
+    bool isAutoLearnActive() const noexcept { return autoLearnActive.load(); }
+    float getAutoLearnProgress() const noexcept { return autoLearnProgress.load(); }
+    float getVisualCrossoverFrequency(int index) const;
+    void startAutoLearn();
+    void cancelAutoLearn();
+    bool applyPendingAutoLearnResult();
 
     // Preset management
     static const juce::Array<PresetRecord>& getFactoryPresets();
@@ -114,8 +125,12 @@ public:
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    void parameterChanged(const juce::String& parameterID, float newValue) override;
 
     void updateCrossoverFilters();
+    void pushLearnSample(float monoSample);
+    std::array<float, numCrossovers> buildLearnedCrossoverTargets() const;
+    void applyLearnedCrossovers(const std::array<float, numCrossovers>& frequencies);
     void applyPresetRecord(const PresetRecord& preset);
     PresetRecord captureCurrentState() const;
     void setCurrentPresetMetadata(const juce::String& key, const juce::String& name, const juce::String& category, bool isFactory);
@@ -147,6 +162,20 @@ private:
     std::array<VectorscopePoint, vectorscopeSize> vectorscopeBuffer{};
     std::atomic<int> vectorscopeWriteIndex{0};
     int vectorscopeDecimationCounter = 0;
+    juce::dsp::FFT learnFFT{learnFftOrder};
+    juce::dsp::WindowingFunction<float> learnWindow{learnFftSize, juce::dsp::WindowingFunction<float>::hann, false};
+    std::array<float, learnFftSize> learnFifo{};
+    std::array<float, learnFftSize * 2> learnFFTData{};
+    std::array<double, learnHistogramBins> learnSpectrumHistogram{};
+    int learnFifoIndex = 0;
+    int learnFramesCaptured = 0;
+    std::atomic<bool> autoLearnActive{false};
+    std::atomic<float> autoLearnProgress{0.0f};
+    std::atomic<bool> pendingLearnResultReady{false};
+    std::array<float, numCrossovers> pendingLearnedCrossovers{};
+    std::array<float, numCrossovers> learnPreviewCrossovers{};
+    std::atomic<bool> learnPreviewValid{false};
+    mutable juce::SpinLock learnLock;
 
     // Preset state
     juce::Array<PresetRecord> userPresets;
@@ -156,6 +185,7 @@ private:
     juce::String currentPresetCategory;
     bool currentPresetIsFactory = false;
     std::atomic<bool> currentPresetDirty{false};
+    std::atomic<bool> suppressDirtyTracking{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };

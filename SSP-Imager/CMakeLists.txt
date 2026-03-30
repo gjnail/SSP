@@ -30,6 +30,8 @@ target_sources(SSPImager
         Source/PluginEditor.cpp
         Source/ImagerGraphComponent.cpp
         Source/ImagerControlsComponent.cpp
+        Source/PresetBrowserComponent.cpp
+        Source/ImagerPresetLibrary.cpp
         Source/SSPVectorUI.cpp
 )
 

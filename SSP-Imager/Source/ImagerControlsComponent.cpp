@@ -95,13 +95,13 @@ void ImagerControlsComponent::resized()
         // Update range text from crossover frequencies
         juce::String rangeText;
         if (i == 0)
-            rangeText = "20 - " + juce::String((int) processor.getCrossoverFrequency(0)) + " Hz";
+            rangeText = "20 - " + juce::String((int) processor.getVisualCrossoverFrequency(0)) + " Hz";
         else if (i == 1)
-            rangeText = juce::String((int) processor.getCrossoverFrequency(0)) + " - " + juce::String((int) processor.getCrossoverFrequency(1)) + " Hz";
+            rangeText = juce::String((int) processor.getVisualCrossoverFrequency(0)) + " - " + juce::String((int) processor.getVisualCrossoverFrequency(1)) + " Hz";
         else if (i == 2)
-            rangeText = juce::String((int) processor.getCrossoverFrequency(1)) + " - " + juce::String((int) processor.getCrossoverFrequency(2)) + " Hz";
+            rangeText = juce::String((int) processor.getVisualCrossoverFrequency(1)) + " - " + juce::String((int) processor.getVisualCrossoverFrequency(2)) + " Hz";
         else
-            rangeText = juce::String((int) processor.getCrossoverFrequency(2)) + " - 20k Hz";
+            rangeText = juce::String((int) processor.getVisualCrossoverFrequency(2)) + " - 20k Hz";
         band.rangeLabel.setText(rangeText, juce::dontSendNotification);
 
         area.removeFromTop(6);

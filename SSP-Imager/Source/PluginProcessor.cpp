@@ -8,6 +8,55 @@ constexpr float minCrossoverHz = 20.0f;
 constexpr float maxCrossoverHz = 20000.0f;
 constexpr float minGapRatio = 1.4f;
 constexpr int vectorscopeDecimation = 4; // write every Nth sample
+constexpr int learnTargetFrames = 36;
+constexpr float learnMinSuggested = 40.0f;
+constexpr float learnMaxSuggested = 16000.0f;
+
+float frequencyFromLogBin(int bin, int totalBins)
+{
+    const auto normalised = juce::jlimit(0.0f, 1.0f, (float) bin / (float) juce::jmax(1, totalBins - 1));
+    return std::pow(10.0f, std::log10(minCrossoverHz) + normalised * (std::log10(maxCrossoverHz) - std::log10(minCrossoverHz)));
+}
+
+float snapLearnedFrequency(float frequency)
+{
+    static constexpr float musicalAnchors[] = {
+        40.0f, 50.0f, 63.0f, 80.0f, 100.0f, 125.0f, 160.0f, 200.0f, 250.0f, 315.0f, 400.0f, 500.0f,
+        630.0f, 800.0f, 1000.0f, 1250.0f, 1600.0f, 2000.0f, 2500.0f, 3150.0f, 4000.0f, 5000.0f,
+        6300.0f, 8000.0f, 10000.0f, 12500.0f, 16000.0f
+    };
+
+    float closest = musicalAnchors[0];
+    float bestDistance = std::abs(frequency - closest);
+
+    for (auto anchor : musicalAnchors)
+    {
+        const auto distance = std::abs(frequency - anchor);
+        if (distance < bestDistance)
+        {
+            bestDistance = distance;
+            closest = anchor;
+        }
+    }
+
+    return closest;
+}
+
+juce::StringArray getImagerParameterIDs()
+{
+    juce::StringArray ids { "crossover1", "crossover2", "crossover3", "outputGain", "bypass" };
+
+    for (int i = 1; i <= PluginProcessor::numBands; ++i)
+    {
+        const auto band = juce::String(i);
+        ids.add("band" + band + "Width");
+        ids.add("band" + band + "Pan");
+        ids.add("band" + band + "Solo");
+        ids.add("band" + band + "Mute");
+    }
+
+    return ids;
+}
 
 float clampCrossover(float hz)
 {
@@ -36,10 +85,20 @@ PluginProcessor::PluginProcessor()
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "PARAMETERS", createParameterLayout())
 {
+    for (const auto& parameterID : getImagerParameterIDs())
+        apvts.addParameterListener(parameterID, this);
+
     refreshUserPresets();
+
+    if (! getFactoryPresets().isEmpty())
+        loadFactoryPreset(0);
 }
 
-PluginProcessor::~PluginProcessor() = default;
+PluginProcessor::~PluginProcessor()
+{
+    for (const auto& parameterID : getImagerParameterIDs())
+        apvts.removeParameterListener(parameterID, this);
+}
 
 juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParameterLayout()
 {
@@ -94,6 +153,58 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     return layout;
 }
 
+void PluginProcessor::parameterChanged(const juce::String&, float)
+{
+    if (! suppressDirtyTracking.load())
+        currentPresetDirty.store(true);
+}
+
+void PluginProcessor::startAutoLearn()
+{
+    const juce::SpinLock::ScopedLockType lock(learnLock);
+    learnFifo.fill(0.0f);
+    learnFFTData.fill(0.0f);
+    learnSpectrumHistogram.fill(0.0);
+    learnFifoIndex = 0;
+    learnFramesCaptured = 0;
+    learnPreviewCrossovers = { getCrossoverFrequency(0), getCrossoverFrequency(1), getCrossoverFrequency(2) };
+    learnPreviewValid.store(true);
+    autoLearnProgress.store(0.0f);
+    pendingLearnResultReady.store(false);
+    autoLearnActive.store(true);
+}
+
+void PluginProcessor::cancelAutoLearn()
+{
+    autoLearnActive.store(false);
+    autoLearnProgress.store(0.0f);
+    learnPreviewValid.store(false);
+}
+
+float PluginProcessor::getVisualCrossoverFrequency(int index) const
+{
+    if (! juce::isPositiveAndBelow(index, numCrossovers))
+        return getCrossoverFrequency(index);
+
+    if (learnPreviewValid.load())
+    {
+        const juce::SpinLock::ScopedLockType lock(learnLock);
+        return learnPreviewCrossovers[(size_t) index];
+    }
+
+    return getCrossoverFrequency(index);
+}
+
+bool PluginProcessor::applyPendingAutoLearnResult()
+{
+    if (! pendingLearnResultReady.exchange(false))
+        return false;
+
+    applyLearnedCrossovers(pendingLearnedCrossovers);
+    learnPreviewValid.store(false);
+    return true;
+}
+
 void PluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     currentSampleRate = sampleRate;
@@ -132,6 +243,9 @@ void PluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     smoothedOutputGain.setCurrentAndTargetValue(1.0f);
 
     vectorscopeDecimationCounter = 0;
+    learnFifoIndex = 0;
+    learnFramesCaptured = 0;
+    autoLearnProgress.store(0.0f);
 }
 
 void PluginProcessor::releaseResources()
@@ -167,6 +281,117 @@ void PluginProcessor::updateCrossoverFilters()
     allpass3ForLowMid.setCutoffFrequency(freq3);
 
     lastCrossoverFreqs = { freq1, freq2, freq3 };
+}
+
+void PluginProcessor::pushLearnSample(float monoSample)
+{
+    if (! autoLearnActive.load())
+        return;
+
+    learnFifo[(size_t) learnFifoIndex++] = monoSample;
+
+    if (learnFifoIndex < learnFftSize)
+        return;
+
+    learnFifoIndex = 0;
+
+    for (int i = 0; i < learnFftSize; ++i)
+        learnFFTData[(size_t) i] = learnFifo[(size_t) i];
+    std::fill(learnFFTData.begin() + learnFftSize, learnFFTData.end(), 0.0f);
+
+    learnWindow.multiplyWithWindowingTable(learnFFTData.data(), learnFftSize);
+    learnFFT.performFrequencyOnlyForwardTransform(learnFFTData.data());
+
+    {
+        const juce::SpinLock::ScopedLockType lock(learnLock);
+        for (int bin = 1; bin < learnFftSize / 2; ++bin)
+        {
+            const float frequency = (float) bin * (float) currentSampleRate / (float) learnFftSize;
+            if (frequency < minCrossoverHz || frequency > maxCrossoverHz)
+                continue;
+
+            const float normalised = (std::log10(frequency) - std::log10(minCrossoverHz))
+                                   / (std::log10(maxCrossoverHz) - std::log10(minCrossoverHz));
+            const int histogramIndex = juce::jlimit(0, learnHistogramBins - 1,
+                                                    (int) std::floor(normalised * (float) (learnHistogramBins - 1)));
+            const double magnitude = (double) learnFFTData[(size_t) bin];
+            learnSpectrumHistogram[(size_t) histogramIndex] += magnitude * magnitude;
+        }
+    }
+
+    ++learnFramesCaptured;
+    autoLearnProgress.store(juce::jlimit(0.0f, 1.0f, (float) learnFramesCaptured / (float) learnTargetFrames));
+    const auto livePreview = buildLearnedCrossoverTargets();
+    {
+        const juce::SpinLock::ScopedLockType lock(learnLock);
+        learnPreviewCrossovers = livePreview;
+    }
+
+    if (learnFramesCaptured < learnTargetFrames)
+        return;
+
+    pendingLearnedCrossovers = buildLearnedCrossoverTargets();
+    pendingLearnResultReady.store(true);
+    autoLearnActive.store(false);
+    autoLearnProgress.store(1.0f);
+}
+
+std::array<float, PluginProcessor::numCrossovers> PluginProcessor::buildLearnedCrossoverTargets() const
+{
+    std::array<float, numCrossovers> learned = { 160.0f, 1800.0f, 7800.0f };
+    std::array<double, learnHistogramBins> histogramCopy{};
+
+    {
+        const juce::SpinLock::ScopedLockType lock(learnLock);
+        histogramCopy = learnSpectrumHistogram;
+    }
+
+    double totalEnergy = 0.0;
+    for (const auto energy : histogramCopy)
+        totalEnergy += energy;
+
+    if (totalEnergy <= 1.0e-9)
+        return learned;
+
+    const double targetFractions[numCrossovers] = { 0.25, 0.50, 0.75 };
+    double cumulativeEnergy = 0.0;
+    int targetIndex = 0;
+
+    for (int bin = 0; bin < learnHistogramBins && targetIndex < numCrossovers; ++bin)
+    {
+        cumulativeEnergy += histogramCopy[(size_t) bin];
+        while (targetIndex < numCrossovers && cumulativeEnergy >= totalEnergy * targetFractions[targetIndex])
+        {
+            const float rawFrequency = frequencyFromLogBin(bin, learnHistogramBins);
+            learned[(size_t) targetIndex] = snapLearnedFrequency(rawFrequency);
+            ++targetIndex;
+        }
+    }
+
+    learned[0] = juce::jlimit(learnMinSuggested, 800.0f, learned[0]);
+    learned[1] = juce::jlimit(learned[0] * minGapRatio, 6000.0f, learned[1]);
+    learned[2] = juce::jlimit(learned[1] * minGapRatio, learnMaxSuggested, learned[2]);
+
+    for (int i = 1; i < numCrossovers; ++i)
+        learned[(size_t) i] = juce::jmax(learned[(size_t) i], learned[(size_t) (i - 1)] * minGapRatio);
+
+    learned[2] = juce::jmin(learned[2], learnMaxSuggested);
+    return learned;
+}
+
+void PluginProcessor::applyLearnedCrossovers(const std::array<float, numCrossovers>& frequencies)
+{
+    suppressDirtyTracking.store(true);
+
+    const juce::String ids[] = { "crossover1", "crossover2", "crossover3" };
+    for (int i = 0; i < numCrossovers; ++i)
+    {
+        if (auto* parameter = apvts.getParameter(ids[i]))
+            parameter->setValueNotifyingHost(parameter->getNormalisableRange().convertTo0to1(frequencies[(size_t) i]));
+    }
+
+    suppressDirtyTracking.store(false);
+    currentPresetDirty.store(true);
 }
 
 void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -219,6 +444,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     {
         const float inL = left[s];
         const float inR = right[s];
+        pushLearnSample((inL + inR) * 0.5f);
 
         // Band splitting
         float lowL, upperRestL;
@@ -454,6 +680,8 @@ void PluginProcessor::refreshUserPresets()
 
 void PluginProcessor::applyPresetRecord(const PresetRecord& preset)
 {
+    suppressDirtyTracking.store(true);
+
     if (auto* p = apvts.getParameter("crossover1"))
         p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(preset.crossover1));
     if (auto* p = apvts.getParameter("crossover2"))
@@ -476,6 +704,8 @@ void PluginProcessor::applyPresetRecord(const PresetRecord& preset)
 
     if (auto* p = apvts.getParameter("outputGain"))
         p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(preset.outputGain));
+
+    suppressDirtyTracking.store(false);
 }
 
 PluginProcessor::PresetRecord PluginProcessor::captureCurrentState() const
@@ -542,7 +772,6 @@ bool PluginProcessor::saveUserPreset(const juce::String& presetName, const juce:
     record.category = category;
     record.author = "User";
 
-    auto* bandsArray = new juce::DynamicObject();
     juce::var bandsVar;
     for (int i = 0; i < numBands; ++i)
     {
@@ -610,7 +839,6 @@ bool PluginProcessor::exportCurrentPresetToFile(const juce::File& file) const
 {
     auto record = captureCurrentState();
 
-    auto* bandsArray = new juce::DynamicObject();
     juce::var bandsVar;
     for (int i = 0; i < numBands; ++i)
     {
@@ -728,7 +956,10 @@ void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
         currentPresetName = newState.getProperty("presetName", "").toString();
         currentPresetCategory = newState.getProperty("presetCategory", "").toString();
         currentPresetIsFactory = (bool) newState.getProperty("presetIsFactory", false);
+        suppressDirtyTracking.store(true);
         apvts.replaceState(newState);
+        suppressDirtyTracking.store(false);
+        currentPresetDirty.store(false);
     }
 }
 
