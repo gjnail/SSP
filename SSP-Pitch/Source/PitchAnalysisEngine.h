@@ -19,7 +19,7 @@ public:
     explicit PitchAnalysisEngine(Listener& listenerToUse);
     ~PitchAnalysisEngine() override;
 
-    void requestAnalysis(juce::AudioBuffer<float> monoBuffer, double sampleRate, juce::String sourceName);
+    void requestAnalysis(juce::AudioBuffer<float> monoBuffer, double sampleRate, juce::String sourceName, DetectionAlgorithm algorithm);
 
 private:
     struct Request
@@ -27,6 +27,7 @@ private:
         juce::AudioBuffer<float> buffer;
         double sampleRate = 44100.0;
         juce::String sourceName;
+        DetectionAlgorithm algorithm = DetectionAlgorithm::melodic;
     };
 
     void run() override;
@@ -35,6 +36,8 @@ private:
 
     static float estimatePitchHz(const float* data, int size, double sampleRate, float& confidence);
     static std::vector<float> smoothPitches(const std::vector<float>& pitches);
+    static std::vector<float> stabilisePitches(const std::vector<float>& pitches,
+                                               const std::vector<float>& amplitudes);
     static std::vector<DetectedNote> buildNotes(const std::vector<float>& pitches,
                                                 const std::vector<float>& amplitudes,
                                                 float hopSeconds,
@@ -46,6 +49,9 @@ private:
                                                           std::atomic<bool>& shouldCancel);
     static void updateHeatmap(AnalysisSession& session);
     static std::pair<float, float> estimateVibrato(const std::vector<PitchPoint>& points);
+    static void applyAlgorithmShaping(AnalysisSession& session, DetectionAlgorithm algorithm);
+    static void detectTempoAndHarmony(AnalysisSession& session);
+    static StatisticsSummary buildStatistics(const AnalysisSession& session);
 
     Listener& listener;
     juce::CriticalSection requestLock;

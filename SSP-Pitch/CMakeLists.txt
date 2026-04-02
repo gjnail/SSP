@@ -18,7 +18,7 @@ juce_add_plugin(SSPPitch
     COPY_PLUGIN_AFTER_BUILD FALSE
     PLUGIN_MANUFACTURER_CODE Ssp1
     PLUGIN_CODE Sspi
-    FORMATS VST3 Standalone
+    FORMATS VST3
     PRODUCT_NAME "SSP Pitch"
 )
 
