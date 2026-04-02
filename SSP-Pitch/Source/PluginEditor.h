@@ -4,8 +4,6 @@
 
 #include "PluginProcessor.h"
 
-class PitchRootComponent;
-
 class PluginEditor final : public juce::AudioProcessorEditor,
                            private juce::Timer,
                            public juce::FileDragAndDropTarget
@@ -24,10 +22,7 @@ public:
 private:
     void timerCallback() override;
 
-    PluginProcessor& pluginProcessor;
-    std::unique_ptr<PitchRootComponent> root;
-    std::uint32_t lastRevision = 0;
-    double lastTimerSeconds = 0.0;
+    std::unique_ptr<juce::Component> root;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditor)
 };

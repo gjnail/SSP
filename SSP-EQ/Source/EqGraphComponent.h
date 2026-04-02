@@ -22,6 +22,7 @@ public:
 
     void setSelectedPoint(int index);
     int getSelectedPoint() const noexcept { return selectedPoint; }
+    const juce::Array<int>& getSelectedPoints() const noexcept { return selectedPoints; }
 
     std::function<void(int)> onSelectionChanged;
 
@@ -29,12 +30,17 @@ private:
     void timerCallback() override;
     juce::Rectangle<int> getPlotBounds() const;
     juce::Point<float> pointToScreen(int pointIndex, const PluginProcessor::EqPoint& point) const;
+    juce::Point<float> pointToDisplayScreen(int pointIndex, const PluginProcessor::EqPoint& point) const;
     juce::Point<float> pointToScreenForSnapshot(int pointIndex, const PluginProcessor::EqPoint& point,
                                                 const PluginProcessor::PointArray& sourcePoints) const;
     PluginProcessor::EqPoint screenToPoint(juce::Point<float> position, const PluginProcessor::EqPoint& source) const;
     int hitTestPoint(juce::Point<float> position) const;
     int hitTestSoloButton(juce::Point<float> position) const;
     juce::Rectangle<float> getSoloButtonBounds(int pointIndex) const;
+    bool isPointSelected(int index) const;
+    void clearSelection();
+    void addPointToSelection(int index, bool makePrimary);
+    void updateMarqueeSelection(bool additive);
     void selectPoint(int index);
 
     PluginProcessor& processor;
@@ -46,6 +52,12 @@ private:
     int selectedPoint = -1;
     int dragPoint = -1;
     int hoverPoint = -1;
+    juce::Array<int> selectedPoints;
+    PluginProcessor::PointArray dragStartPoints{};
+    juce::Point<float> dragStartPosition;
+    bool marqueeSelecting = false;
+    bool marqueeAdditive = false;
+    juce::Rectangle<float> marqueeBounds;
     bool showNoteAxis = false;
     ssp::ui::SSPButton notesButton{"Notes"};
 

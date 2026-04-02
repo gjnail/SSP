@@ -29,6 +29,7 @@ target_sources(SSPReverb
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
         Source/ReverbControlsComponent.cpp
+        Source/ReverbVectorUI.cpp
 )
 
 target_compile_definitions(SSPReverb

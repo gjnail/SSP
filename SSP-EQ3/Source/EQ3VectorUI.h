@@ -26,6 +26,8 @@ void drawPanelBackground(juce::Graphics&, juce::Rectangle<float> bounds, juce::C
 class LookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
+    juce::Label* createSliderTextBox(juce::Slider&) override;
+    juce::Slider::SliderLayout getSliderLayout(juce::Slider&) override;
     void drawRotarySlider(juce::Graphics&, int x, int y, int width, int height,
                           float sliderPosProportional, float rotaryStartAngle, float rotaryEndAngle,
                           juce::Slider&) override;
@@ -33,12 +35,15 @@ public:
                           bool shouldDrawButtonAsDown) override;
 };
 
-LookAndFeel& getLookAndFeel();
+LookAndFeel& getVectorLookAndFeel();
 
 class SSPKnob final : public juce::Slider
 {
 public:
     SSPKnob();
+    void paint(juce::Graphics&) override;
+    void mouseDoubleClick(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
 };
 
 class SSPToggle final : public juce::ToggleButton

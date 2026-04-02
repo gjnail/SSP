@@ -1,12 +1,14 @@
 #include "PitchAnalysisEngine.h"
+#include "PitchScale.h"
 
 namespace
 {
-constexpr int analysisWindowSize = 2048;
-constexpr int analysisHopSize = 256;
+constexpr int analysisWindowSize = 1024;
+constexpr int analysisHopSize = 128;
 constexpr float minimumPitchHz = 55.0f;
 constexpr float maximumPitchHz = 1400.0f;
-constexpr float silenceThreshold = 0.01f;
+constexpr float silenceThreshold = 0.006f;
+constexpr float pitchConfidenceThreshold = 0.42f;
 
 float hzToMidi(float hz)
 {
@@ -24,6 +26,12 @@ float median(std::vector<float> values)
         return 0.5f * (values[middle - 1] + values[middle]);
 
     return values[middle];
+}
+
+juce::String noteNameFromClass(int noteClass)
+{
+    static const juce::StringArray names{ "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    return names[(noteClass % 12 + 12) % 12];
 }
 } // namespace
 
@@ -43,10 +51,10 @@ PitchAnalysisEngine::~PitchAnalysisEngine()
     stopThread(3000);
 }
 
-void PitchAnalysisEngine::requestAnalysis(juce::AudioBuffer<float> monoBuffer, double sampleRate, juce::String sourceName)
+void PitchAnalysisEngine::requestAnalysis(juce::AudioBuffer<float> monoBuffer, double sampleRate, juce::String sourceName, DetectionAlgorithm algorithm)
 {
     const juce::ScopedLock lock(requestLock);
-    pendingRequest = Request{std::move(monoBuffer), sampleRate, std::move(sourceName)};
+    pendingRequest = Request{std::move(monoBuffer), sampleRate, std::move(sourceName), algorithm};
     wakeEvent.signal();
 }
 
@@ -78,6 +86,7 @@ AnalysisSession PitchAnalysisEngine::analyse(const Request& request)
     AnalysisSession session;
     session.sourceName = request.sourceName;
     session.durationSeconds = request.buffer.getNumSamples() / juce::jmax(1.0, request.sampleRate);
+    session.algorithm = request.algorithm;
     session.analyzing = true;
     session.progress = 0.02f;
     session.progressLabel = "Scanning pitch";
@@ -115,20 +124,20 @@ AnalysisSession PitchAnalysisEngine::analyse(const Request& request)
         if (rms > silenceThreshold)
         {
             const float hz = estimatePitchHz(frameData, analysisWindowSize, request.sampleRate, confidence);
-            if (hz >= minimumPitchHz && hz <= maximumPitchHz && confidence > 0.55f)
+            if (hz >= minimumPitchHz && hz <= maximumPitchHz && confidence > pitchConfidenceThreshold)
                 pitches[(size_t) frame] = hzToMidi(hz);
         }
 
         if (frame % 120 == 0)
         {
             session.progress = juce::jmap((float) frame, 0.0f, (float) totalFrames, 0.03f, 0.68f);
-            session.notes = buildNotes(smoothPitches(pitches), amplitudes, (float) analysisHopSize / (float) request.sampleRate, frame);
+            session.notes = buildNotes(stabilisePitches(pitches, amplitudes), amplitudes, (float) analysisHopSize / (float) request.sampleRate, frame);
             session.progressLabel = "Detecting notes";
             publishProgress(session);
         }
     }
 
-    auto smoothed = smoothPitches(pitches);
+    auto smoothed = stabilisePitches(pitches, amplitudes);
     session.progress = 0.72f;
     session.progressLabel = "Building note blobs";
     session.notes = buildNotes(smoothed, amplitudes, (float) analysisHopSize / (float) request.sampleRate, totalFrames);
@@ -143,7 +152,10 @@ AnalysisSession PitchAnalysisEngine::analyse(const Request& request)
     session.progressLabel = "Rendering spectrogram";
     std::atomic<bool> cancelled{false};
     session.spectrogram = buildSpectrogram(request.buffer, request.sampleRate, cancelled);
+    applyAlgorithmShaping(session, request.algorithm);
     updateHeatmap(session);
+    detectTempoAndHarmony(session);
+    session.statistics = buildStatistics(session);
 
     const int voicedFrames = (int) std::count_if(smoothed.begin(), smoothed.end(), [](float value) { return value > 1.0f; });
     const int lowEnergyFrames = (int) std::count_if(amplitudes.begin(), amplitudes.end(), [](float value) { return value < silenceThreshold; });
@@ -222,6 +234,47 @@ std::vector<float> PitchAnalysisEngine::smoothPitches(const std::vector<float>& 
     return smoothed;
 }
 
+std::vector<float> PitchAnalysisEngine::stabilisePitches(const std::vector<float>& pitches,
+                                                         const std::vector<float>& amplitudes)
+{
+    auto stabilised = smoothPitches(pitches);
+    const auto size = (int) stabilised.size();
+
+    for (int i = 0; i < size; ++i)
+    {
+        if (stabilised[(size_t) i] > 1.0f || amplitudes[(size_t) i] < silenceThreshold * 0.65f)
+            continue;
+
+        int previous = -1;
+        int next = -1;
+        for (int offset = 1; offset <= 3; ++offset)
+        {
+            if (previous < 0 && i - offset >= 0 && stabilised[(size_t) (i - offset)] > 1.0f)
+                previous = i - offset;
+            if (next < 0 && i + offset < size && stabilised[(size_t) (i + offset)] > 1.0f)
+                next = i + offset;
+        }
+
+        if (previous >= 0 && next >= 0)
+        {
+            const float previousPitch = stabilised[(size_t) previous];
+            const float nextPitch = stabilised[(size_t) next];
+            if (std::abs(previousPitch - nextPitch) <= 1.25f)
+                stabilised[(size_t) i] = 0.5f * (previousPitch + nextPitch);
+        }
+        else if (next >= 0 && next - i <= 2)
+        {
+            stabilised[(size_t) i] = stabilised[(size_t) next];
+        }
+        else if (previous >= 0 && i - previous <= 2)
+        {
+            stabilised[(size_t) i] = stabilised[(size_t) previous];
+        }
+    }
+
+    return stabilised;
+}
+
 std::vector<DetectedNote> PitchAnalysisEngine::buildNotes(const std::vector<float>& pitches,
                                                           const std::vector<float>& amplitudes,
                                                           float hopSeconds,
@@ -249,22 +302,35 @@ std::vector<DetectedNote> PitchAnalysisEngine::buildNotes(const std::vector<floa
                 continue;
 
             voicedPitches.push_back(pitch);
-            trace.push_back(PitchPoint{ i * hopSeconds, pitch, amplitude });
+            const float cents = (pitch - std::round(pitch)) * 100.0f;
+            const bool sibilant = amplitude < 0.028f;
+            trace.push_back(PitchPoint{ i * hopSeconds, pitch, amplitude, cents, sibilant });
             envelope.push_back(amplitude);
             ampSum += amplitude;
         }
 
-        if (trace.size() < 3 || voicedPitches.empty())
+        if (trace.size() < 2 || voicedPitches.empty())
             return;
 
         DetectedNote note;
         note.id = juce::Uuid().toString();
-        note.startTime = trace.front().time;
-        note.endTime = trace.back().time + hopSeconds;
+        const float startPadding = hopSeconds * 1.5f;
+        const float endPadding = hopSeconds * 0.75f;
+        const float paddedStart = juce::jmax(0.0f, trace.front().time - startPadding);
+        const float paddedEnd = trace.back().time + hopSeconds + endPadding;
+        note.startTime = paddedStart;
+        note.endTime = paddedEnd;
         note.originalStartTime = note.startTime;
         note.originalEndTime = note.endTime;
         note.originalPitch = median(voicedPitches);
         note.correctedPitch = note.originalPitch;
+        note.pitchCenter = note.originalPitch;
+        note.pitchOffsetCents = (note.originalPitch - std::round(note.originalPitch)) * 100.0f;
+        if (trace.front().time > paddedStart)
+            trace.insert(trace.begin(), PitchPoint{ paddedStart, trace.front().pitch, trace.front().amplitude, trace.front().cents, trace.front().sibilant });
+        if (trace.back().time < paddedEnd)
+            trace.push_back(PitchPoint{ paddedEnd, trace.back().pitch, trace.back().amplitude, trace.back().cents, trace.back().sibilant });
+
         note.pitchTrace = trace;
         note.correctedPitchTrace = trace;
         note.amplitudeEnvelope = envelope;
@@ -272,6 +338,8 @@ std::vector<DetectedNote> PitchAnalysisEngine::buildNotes(const std::vector<floa
         const auto vibrato = estimateVibrato(trace);
         note.vibratoRate = vibrato.first;
         note.vibratoDepth = vibrato.second;
+        note.sibilantFlag = std::count_if(trace.begin(), trace.end(), [](const auto& point) { return point.sibilant; }) > (int) trace.size() / 5;
+        note.timeHandles = { 0.25f, 0.5f, 0.75f };
         notes.push_back(std::move(note));
     };
 
@@ -423,5 +491,148 @@ std::pair<float, float> PitchAnalysisEngine::estimateVibrato(const std::vector<P
 
     depth = points.empty() ? 0.0f : (depth / (float) points.size()) * 100.0f;
     return { rate, depth };
+}
+
+void PitchAnalysisEngine::applyAlgorithmShaping(AnalysisSession& session, DetectionAlgorithm algorithm)
+{
+    for (auto& note : session.notes)
+        note.algorithm = algorithm;
+
+    switch (algorithm)
+    {
+        case DetectionAlgorithm::percussive:
+        case DetectionAlgorithm::universal:
+            for (auto& note : session.notes)
+            {
+                note.originalPitch = 60.0f;
+                note.correctedPitch = 60.0f;
+                note.pitchCenter = 60.0f;
+                for (auto& point : note.pitchTrace)
+                    point.pitch = 60.0f;
+                note.correctedPitchTrace = note.pitchTrace;
+            }
+            break;
+
+        case DetectionAlgorithm::percussivePitched:
+            for (auto& note : session.notes)
+                note.attackSpeed = 135.0f;
+            break;
+
+        case DetectionAlgorithm::polyphonicDecay:
+        case DetectionAlgorithm::polyphonicSustain:
+            for (auto& note : session.notes)
+            {
+                note.separationType = SeparationType::hard;
+                note.fadeOut = algorithm == DetectionAlgorithm::polyphonicDecay ? 0.2f : 0.08f;
+            }
+            session.polyphonicWarning = false;
+            break;
+
+        case DetectionAlgorithm::automatic:
+        case DetectionAlgorithm::melodic:
+        default:
+            break;
+    }
+}
+
+void PitchAnalysisEngine::detectTempoAndHarmony(AnalysisSession& session)
+{
+    session.tempoMap.clear();
+    session.chordTrack.clear();
+    session.keyTrack.clear();
+
+    if (session.notes.empty())
+        return;
+
+    std::vector<double> onsetDiffs;
+    for (size_t i = 1; i < session.notes.size(); ++i)
+        onsetDiffs.push_back(session.notes[i].startTime - session.notes[i - 1].startTime);
+
+    double bpm = 120.0;
+    if (! onsetDiffs.empty())
+    {
+        std::vector<float> diffFloats;
+        diffFloats.reserve(onsetDiffs.size());
+        for (auto diff : onsetDiffs)
+            if (diff > 0.04)
+                diffFloats.push_back((float) diff);
+
+        if (! diffFloats.empty())
+            bpm = juce::jlimit(50.0, 220.0, 60.0 / juce::jmax(0.15f, median(diffFloats)));
+    }
+
+    session.tempoMap.push_back({ 0.0, bpm, 4, 4 });
+
+    std::array<float, 12> histogram{};
+    for (const auto& note : session.notes)
+        histogram[(size_t) ((juce::roundToInt(note.originalPitch) % 12 + 12) % 12)] += juce::jmax(0.15f, note.amplitude);
+
+    int tonic = 0;
+    for (int i = 1; i < 12; ++i)
+        if (histogram[(size_t) i] > histogram[(size_t) tonic])
+            tonic = i;
+
+    float majorScore = histogram[(size_t) ((tonic + 4) % 12)] + histogram[(size_t) ((tonic + 7) % 12)];
+    float minorScore = histogram[(size_t) ((tonic + 3) % 12)] + histogram[(size_t) ((tonic + 7) % 12)];
+    const juce::String scaleName = majorScore >= minorScore ? "Major" : "Minor";
+    session.keyTrack.push_back({ 0.0, session.durationSeconds, noteNameFromClass(tonic), scaleName });
+
+    const double chordWindow = 1.0;
+    for (double start = 0.0; start < session.durationSeconds; start += chordWindow)
+    {
+        std::array<float, 12> chordHistogram{};
+        for (const auto& note : session.notes)
+        {
+            if (note.endTime < start || note.startTime > start + chordWindow)
+                continue;
+            chordHistogram[(size_t) ((juce::roundToInt(note.correctedPitch) % 12 + 12) % 12)] += juce::jmax(0.2f, note.amplitude);
+        }
+
+        int root = 0;
+        for (int i = 1; i < 12; ++i)
+            if (chordHistogram[(size_t) i] > chordHistogram[(size_t) root])
+                root = i;
+
+        const bool hasMinorThird = chordHistogram[(size_t) ((root + 3) % 12)] > 0.1f;
+        const bool hasMajorThird = chordHistogram[(size_t) ((root + 4) % 12)] > 0.1f;
+        const bool hasFifth = chordHistogram[(size_t) ((root + 7) % 12)] > 0.1f;
+        juce::String symbol = noteNameFromClass(root);
+        if (hasMinorThird && hasFifth)
+            symbol << "m";
+        else if (hasMajorThird && hasFifth)
+            symbol << "maj";
+        else
+            symbol << "5";
+
+        session.chordTrack.push_back({ start, juce::jmin(session.durationSeconds, start + chordWindow), symbol,
+                                       { root, (root + (hasMinorThird ? 3 : 4)) % 12, (root + 7) % 12 } });
+    }
+}
+
+StatisticsSummary PitchAnalysisEngine::buildStatistics(const AnalysisSession& session)
+{
+    StatisticsSummary stats;
+    stats.totalNotes = (int) session.notes.size();
+    if (session.notes.empty())
+        return stats;
+
+    const auto tonic = session.keyTrack.empty() ? 0 : juce::StringArray{ "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }.indexOf(session.keyTrack.front().tonic);
+    const auto scale = session.keyTrack.empty() ? juce::String("Major") : session.keyTrack.front().scale;
+
+    for (const auto& note : session.notes)
+    {
+        stats.averagePitchAccuracyBefore += std::abs((note.originalPitch - std::round(note.originalPitch)) * 100.0f);
+        stats.averagePitchAccuracyAfter += std::abs((note.correctedPitch - std::round(note.correctedPitch)) * 100.0f);
+        stats.correctionAmountAverage += std::abs(note.correctedPitch - note.originalPitch) * 100.0f;
+        if (isMidiNoteInScale(juce::roundToInt(note.correctedPitch), tonic < 0 ? 0 : tonic, scale))
+            stats.inScalePercent += 1.0f;
+    }
+
+    const float denom = (float) session.notes.size();
+    stats.averagePitchAccuracyBefore /= denom;
+    stats.averagePitchAccuracyAfter /= denom;
+    stats.correctionAmountAverage /= denom;
+    stats.inScalePercent = (stats.inScalePercent / denom) * 100.0f;
+    return stats;
 }
 } // namespace ssp::pitch

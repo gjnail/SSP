@@ -22,7 +22,7 @@ public:
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 8.0; }
+    double getTailLengthSeconds() const override { return 12.0; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -35,17 +35,52 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
 
-    static const juce::StringArray& getModeNames();
-    juce::String getCurrentModeDescription() const;
-
 private:
+    using Filter = juce::dsp::StateVariableTPTFilter<float>;
+    using DelayLine = juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear>;
+
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-    std::array<juce::dsp::StateVariableTPTFilter<float>, 2> lowPassFilters;
-    std::array<juce::dsp::StateVariableTPTFilter<float>, 2> highPassFilters;
+    void updateScratchBuffers(int numChannels, int numSamples);
+    void updateFilterCutoffs(float loCutHz, float hiCutHz, float crossoverHz);
+    void applyInputFilters(juce::AudioBuffer<float>& buffer);
+    void applyFlatCutFilters(juce::AudioBuffer<float>& buffer);
+    void buildPredelayedInput(const juce::AudioBuffer<float>& source, juce::AudioBuffer<float>& destination, float predelaySamples);
+    void buildEarlyReflections(const juce::AudioBuffer<float>& source,
+                               juce::AudioBuffer<float>& destination,
+                               float amount,
+                               float reflect,
+                               float shape,
+                               float rate,
+                               bool spinEnabled);
+    void splitIntoDiffusionBands(const juce::AudioBuffer<float>& source,
+                                 juce::AudioBuffer<float>& lowBand,
+                                 juce::AudioBuffer<float>& highBand);
+    void processChorus(juce::AudioBuffer<float>& buffer, juce::dsp::Chorus<float>& chorus);
+    void applyWidth(juce::AudioBuffer<float>& buffer, float widthScale);
+    float getValue(const juce::String& parameterID) const;
+
+    std::array<Filter, 2> inputLowPassFilters;
+    std::array<Filter, 2> inputHighPassFilters;
+    std::array<Filter, 2> outputLowPassFilters;
+    std::array<Filter, 2> outputHighPassFilters;
+    std::array<Filter, 2> crossoverLowFilters;
+    std::array<Filter, 2> crossoverHighFilters;
+    std::array<DelayLine, 2> preDelayLines;
+    std::array<DelayLine, 2> earlyReflectionLines;
+    juce::dsp::Chorus<float> lowDiffusionChorus;
+    juce::dsp::Chorus<float> highDiffusionChorus;
+    juce::dsp::Chorus<float> wetChorus;
     juce::Reverb reverb;
     juce::SmoothedValue<float> mixSmoothed;
+    juce::AudioBuffer<float> dryBuffer;
+    juce::AudioBuffer<float> filteredInputBuffer;
+    juce::AudioBuffer<float> wetBuffer;
+    juce::AudioBuffer<float> lowBandBuffer;
+    juce::AudioBuffer<float> highBandBuffer;
+    juce::AudioBuffer<float> earlyBuffer;
     double currentSampleRate = 44100.0;
+    float earlyPhase = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };

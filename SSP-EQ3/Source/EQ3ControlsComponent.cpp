@@ -4,6 +4,9 @@ namespace
 {
 juce::String formatDb(double value)
 {
+    if (value <= -95.95)
+        return "-inf dB";
+
     const auto rounded = juce::roundToInt((float) value * 10.0f) / 10.0f;
 
     if (std::abs(rounded) < 0.05f)
@@ -24,7 +27,12 @@ public:
         addAndMakeVisible(nameLabel);
         addAndMakeVisible(valueLabel);
 
+        slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         slider.setColour(juce::Slider::rotarySliderFillColourId, accentColour);
+        slider.setColour(juce::Slider::thumbColourId, accentColour.brighter(0.35f));
+        slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        slider.setColour(juce::Slider::textBoxTextColourId, eq3ui::textStrong());
+        slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xff111822));
         slider.setDoubleClickReturnValue(true, 0.0);
         slider.onValueChange = [this] { refreshValue(); };
 

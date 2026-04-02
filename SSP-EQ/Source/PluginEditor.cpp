@@ -3,7 +3,7 @@
 namespace
 {
 constexpr int editorWidth = 1080;
-constexpr int editorHeight = 820;
+constexpr int editorHeight = 1180;
 }
 
 PluginEditor::PluginEditor(PluginProcessor& p)
@@ -13,6 +13,8 @@ PluginEditor::PluginEditor(PluginProcessor& p)
       presetBrowser(p)
 {
     setSize(editorWidth, editorHeight);
+    setResizable(true, true);
+    setResizeLimits(960, 900, 1800, 1600);
     setWantsKeyboardFocus(true);
 
     titleLabel.setText("SSP EQ", juce::dontSendNotification);
@@ -20,6 +22,11 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     titleLabel.setJustificationType(juce::Justification::centredLeft);
     titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(titleLabel);
+
+    phaseBadgeLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+    phaseBadgeLabel.setJustificationType(juce::Justification::centred);
+    phaseBadgeLabel.setColour(juce::Label::textColourId, juce::Colour(0xff0b1118));
+    addAndMakeVisible(phaseBadgeLabel);
 
     hintLabel.setText("Double-click to add up to 24 bands, drag nodes to place them, use the wheel for Q, and shape each band below without changing the SSP EQ look.",
                       juce::dontSendNotification);
@@ -116,6 +123,8 @@ void PluginEditor::resized()
     auto titleRow = header.removeFromTop(36);
     titleLabel.setBounds(titleRow.removeFromLeft(140));
     titleRow.removeFromLeft(12);
+    phaseBadgeLabel.setBounds(titleRow.removeFromLeft(44).reduced(0, 4));
+    titleRow.removeFromLeft(10);
     compareAButton.setBounds(titleRow.removeFromLeft(34).reduced(0, 2));
     titleRow.removeFromLeft(6);
     compareCopyButton.setBounds(titleRow.removeFromLeft(38).reduced(0, 2));
@@ -134,7 +143,7 @@ void PluginEditor::resized()
     hintLabel.setBounds(header);
 
     area.removeFromTop(10);
-    graph.setBounds(area.removeFromTop(460));
+    graph.setBounds(area.removeFromTop(390));
     area.removeFromTop(14);
     controls.setBounds(area);
     presetBrowser.setBounds(getLocalBounds());
@@ -162,6 +171,27 @@ bool PluginEditor::keyPressed(const juce::KeyPress& key)
         {
             processor->toggleABComparison();
             return true;
+        }
+
+        if (key.getTextCharacter() == 'd' || key.getTextCharacter() == 'D')
+        {
+            auto targets = graph.getSelectedPoints();
+            if (targets.isEmpty() && graph.getSelectedPoint() >= 0)
+                targets.add(graph.getSelectedPoint());
+
+            if (! targets.isEmpty())
+            {
+                const bool enableDynamic = ! processor->getPoint(targets.getFirst()).dynamicEnabled;
+                for (auto index : targets)
+                {
+                    auto point = processor->getPoint(index);
+                    if (! point.enabled)
+                        continue;
+                    point.dynamicEnabled = enableDynamic;
+                    processor->setPoint(index, point);
+                }
+                return true;
+            }
         }
 
         if ((key.getModifiers().isCommandDown() || key.getModifiers().isCtrlDown())
@@ -207,4 +237,24 @@ void PluginEditor::timerCallback()
     presetButton.setButtonText(name);
     compareAButton.setToggleState(processor->getActiveCompareSlot() == 0, juce::dontSendNotification);
     compareBButton.setToggleState(processor->getActiveCompareSlot() == 1, juce::dontSendNotification);
+
+    const auto processingMode = processor->getProcessingMode();
+    if (processingMode == PluginProcessor::naturalPhase)
+    {
+        phaseBadgeLabel.setVisible(true);
+        phaseBadgeLabel.setText("NP", juce::dontSendNotification);
+        phaseBadgeLabel.setColour(juce::Label::backgroundColourId, juce::Colour(0xfff0b661));
+        phaseBadgeLabel.setColour(juce::Label::outlineColourId, juce::Colour(0xfff5d293));
+    }
+    else if (processingMode == PluginProcessor::linearPhase)
+    {
+        phaseBadgeLabel.setVisible(true);
+        phaseBadgeLabel.setText("LP", juce::dontSendNotification);
+        phaseBadgeLabel.setColour(juce::Label::backgroundColourId, juce::Colour(0xff63d0ff));
+        phaseBadgeLabel.setColour(juce::Label::outlineColourId, juce::Colour(0xffa9ebff));
+    }
+    else
+    {
+        phaseBadgeLabel.setVisible(false);
+    }
 }

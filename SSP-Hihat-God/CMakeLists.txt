@@ -29,6 +29,8 @@ target_sources(SSPHihatGod
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
         Source/HihatGodControlsComponent.cpp
+        Source/HihatPresetBrowserComponent.cpp
+        Source/SSPVectorUI.cpp
 )
 
 target_compile_definitions(SSPHihatGod

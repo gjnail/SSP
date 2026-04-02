@@ -12,7 +12,6 @@ public:
     void resized() override;
 
 private:
-    PluginProcessor& processor;
     ReverbControlsComponent controls;
     juce::Label titleLabel;
     juce::Label hintLabel;

@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "SSPVectorUI.h"
 
 class SaturateControlsComponent final : public juce::Component,
                                         private juce::Timer
@@ -14,28 +15,36 @@ public:
     void resized() override;
 
 private:
-    class WaveshaperDisplay;
     class SaturateKnob;
+    class SpectrumDisplay;
+    class BandPanel;
+    class GlobalPanel;
 
     void timerCallback() override;
-    void refreshMeters();
+    void setSelectedBand(int newBandIndex);
+    void updateHeaderText();
+    void applyPreset(int presetIndex);
+    void stepPreset(int delta);
+    void showPresetBrowser();
 
     PluginProcessor& processor;
     juce::AudioProcessorValueTreeState& apvts;
-    juce::Label summaryLabel;
-    juce::Label badgeLabel;
-    juce::Label inputMeterLabel;
-    juce::Label heatMeterLabel;
-    juce::Label outputMeterLabel;
-    juce::Label modeLabel;
-    juce::ComboBox modeBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modeAttachment;
-    std::unique_ptr<WaveshaperDisplay> waveshaperDisplay;
-    std::unique_ptr<SaturateKnob> driveKnob;
-    std::unique_ptr<SaturateKnob> colorKnob;
-    std::unique_ptr<SaturateKnob> biasKnob;
-    std::unique_ptr<SaturateKnob> outputKnob;
-    std::unique_ptr<SaturateKnob> mixKnob;
+    int selectedBand = 0;
+    int currentPresetIndex = 0;
+
+    juce::Label eyebrowLabel;
+    juce::Label titleLabel;
+    juce::Label subtitleLabel;
+    juce::Label presetLabel;
+    juce::Label searchLabel;
+    juce::Label selectedBandLabel;
+    ssp::ui::SSPButton previousPresetButton{"<"};
+    ssp::ui::SSPButton presetButton{"Gentle Warmth"};
+    ssp::ui::SSPButton nextPresetButton{">"};
+
+    std::unique_ptr<SpectrumDisplay> spectrumDisplay;
+    std::unique_ptr<GlobalPanel> globalPanel;
+    std::array<std::unique_ptr<BandPanel>, PluginProcessor::maxBands> bandPanels;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SaturateControlsComponent)
 };

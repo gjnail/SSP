@@ -37,6 +37,37 @@ bool pointTypeUsesGain(int type)
         || type == PluginProcessor::tiltShelf;
 }
 
+float getSignedDynamicRangeDb(const PluginProcessor::EqPoint& point)
+{
+    const float magnitude = juce::jmin(std::abs(point.gainDb), juce::jlimit(0.0f, 24.0f, point.dynamicRangeDb));
+    return point.gainDb < 0.0f ? -magnitude : magnitude;
+}
+
+PluginProcessor::EqPoint makeFullDynamicSetPoint(const PluginProcessor::EqPoint& point)
+{
+    auto result = point;
+    result.gainDb = point.gainDb;
+    return result;
+}
+
+PluginProcessor::EqPoint makeRangeLimitedDynamicPoint(const PluginProcessor::EqPoint& point)
+{
+    auto result = point;
+    result.gainDb = getSignedDynamicRangeDb(point);
+    return result;
+}
+
+juce::Colour getDynamicBandColour(const PluginProcessor::EqPoint& point)
+{
+    auto base = ssp::ui::getStereoModeColour(point.stereoMode);
+    if (! point.dynamicEnabled)
+        return base;
+
+    return point.dynamicDirection == PluginProcessor::dynamicBelow
+        ? base.interpolatedWith(juce::Colour(0xff52df88), 0.38f)
+        : base.interpolatedWith(juce::Colour(0xfff0844f), 0.38f);
+}
+
 void drawResponseDeltaFill(juce::Graphics& g,
                            const juce::Rectangle<int>& plot,
                            const std::vector<float>& responseValues,
@@ -166,6 +197,16 @@ float getResponseForSnapshot(const PluginProcessor::PointArray& points, double s
     }
 
     return anyMatched ? juce::Decibels::gainToDecibels((float) magnitude, -48.0f) : 0.0f;
+}
+
+float getResponseForPointSnapshot(const PluginProcessor::EqPoint& point, double sampleRate, float frequency)
+{
+    const auto setup = buildPointSetup(point, sampleRate);
+    double magnitude = 1.0;
+    for (int stage = 0; stage < setup.numStages; ++stage)
+        magnitude *= getMagnitudeForFrequency(setup.coeffs[(size_t) stage], frequency, sampleRate);
+
+    return juce::Decibels::gainToDecibels((float) magnitude, -48.0f);
 }
 
 juce::Path buildResponsePath(const PluginProcessor::PointArray& points,
@@ -368,6 +409,66 @@ void EqGraphComponent::paint(juce::Graphics& g)
         g.fillPath(dashed);
     }
 
+    for (int pointIndex = 0; pointIndex < PluginProcessor::maxPoints; ++pointIndex)
+    {
+        const auto& point = points[(size_t) pointIndex];
+        if (! point.enabled || ! point.dynamicEnabled)
+            continue;
+
+        juce::Path setCurve;
+        juce::Path rangeCurve;
+        juce::Path activeCurve;
+        bool startedSet = false;
+        const bool showRangeLimit = pointIndex == selectedPoint && std::abs(std::abs(point.gainDb) - std::abs(getSignedDynamicRangeDb(point))) > 0.01f;
+        const auto fullSetPoint = makeFullDynamicSetPoint(point);
+        const auto rangeLimitedPoint = makeRangeLimitedDynamicPoint(point);
+
+        for (int x = 0; x < plot.getWidth(); ++x)
+        {
+            const float frequency = normalisedToFrequency((float) x / (float) juce::jmax(1, plot.getWidth() - 1));
+            const float setDb = juce::jlimit(minGainDb, maxGainDb, getResponseForPointSnapshot(fullSetPoint, sampleRate, frequency));
+            const float rangeDb = juce::jlimit(minGainDb, maxGainDb, getResponseForPointSnapshot(rangeLimitedPoint, sampleRate, frequency));
+            const float activeDb = juce::jlimit(minGainDb, maxGainDb, processor.getBandResponseForFrequency(pointIndex, frequency));
+            const float px = (float) plot.getX() + (float) x;
+            const float setY = juce::jmap(setDb, maxGainDb, minGainDb, (float) plot.getY(), (float) plot.getBottom());
+            const float rangeY = juce::jmap(rangeDb, maxGainDb, minGainDb, (float) plot.getY(), (float) plot.getBottom());
+            const float activeY = juce::jmap(activeDb, maxGainDb, minGainDb, (float) plot.getY(), (float) plot.getBottom());
+
+            if (! startedSet)
+            {
+                setCurve.startNewSubPath(px, setY);
+                rangeCurve.startNewSubPath(px, rangeY);
+                activeCurve.startNewSubPath(px, activeY);
+                startedSet = true;
+            }
+            else
+            {
+                setCurve.lineTo(px, setY);
+                rangeCurve.lineTo(px, rangeY);
+                activeCurve.lineTo(px, activeY);
+            }
+        }
+
+        const auto dynamicColour = getDynamicBandColour(point);
+        juce::Path dashed;
+        const float dashes[] = { 6.0f, 4.0f };
+        juce::PathStrokeType(1.3f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded)
+            .createDashedStroke(dashed, setCurve, dashes, 2);
+        g.setColour(dynamicColour.withAlpha(0.28f));
+        g.fillPath(dashed);
+        if (showRangeLimit)
+        {
+            juce::Path dotted;
+            const float dots[] = { 2.0f, 4.0f };
+            juce::PathStrokeType(1.1f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded)
+                .createDashedStroke(dotted, rangeCurve, dots, 2);
+            g.setColour(dynamicColour.withAlpha(0.52f));
+            g.fillPath(dotted);
+        }
+        g.setColour(dynamicColour.withAlpha(0.9f));
+        g.strokePath(activeCurve, juce::PathStrokeType(1.9f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+
     std::array<bool, 5> activeModes{};
     for (const auto& point : points)
         if (point.enabled && juce::isPositiveAndBelow(point.stereoMode, (int) activeModes.size()))
@@ -388,6 +489,22 @@ void EqGraphComponent::paint(juce::Graphics& g)
             }
 
             drawResponseDeltaFill(g, plot, contributionValues, ssp::ui::getStereoModeColour(point.stereoMode).withAlpha(0.18f));
+        }
+    }
+
+    if (selectedPoint >= 0 && juce::isPositiveAndBelow(selectedPoint, PluginProcessor::maxPoints))
+    {
+        const auto point = points[(size_t) selectedPoint];
+        if (point.enabled && point.dynamicEnabled)
+        {
+            const float thresholdY = juce::jmap(juce::jlimit(-96.0f, 0.0f, point.dynamicThresholdDb),
+                                                -96.0f, 0.0f, (float) plot.getBottom(), (float) plot.getY());
+            g.setColour(juce::Colour(0xfff0a35a).withAlpha(0.55f));
+            g.drawHorizontalLine(juce::roundToInt(thresholdY), (float) plot.getX(), (float) plot.getRight());
+            g.setFont(10.5f);
+            g.drawText("Thr " + juce::String(point.dynamicThresholdDb, 1) + " dB",
+                       plot.getRight() - 94, juce::roundToInt(thresholdY) - 10, 90, 16,
+                       juce::Justification::centredRight, false);
         }
     }
 
@@ -434,20 +551,24 @@ void EqGraphComponent::paint(juce::Graphics& g)
         if (!point.enabled)
             continue;
 
-        const auto currentPosition = pointToScreenForSnapshot(i, point, points);
+        auto currentPosition = point.dynamicEnabled ? pointToDisplayScreen(i, point)
+                                                    : pointToScreenForSnapshot(i, point, points);
         const auto previousPoint = transitionFromPoints[(size_t) i];
         const auto previousPosition = previousPoint.enabled ? pointToScreenForSnapshot(i, previousPoint, transitionFromPoints) : currentPosition;
         const auto position = previousPosition + (currentPosition - previousPosition) * easedTransition;
         const bool isSelected = (i == selectedPoint);
+        const bool isMultiSelected = isPointSelected(i);
         const bool isHovered = (i == hoverPoint);
         const bool isSolo = (i == soloPoint);
-        const float radius = isSelected ? selectedPointRadius : pointRadius + (isHovered ? 1.5f : 0.0f);
-        const auto modeColour = ssp::ui::getStereoModeColour(point.stereoMode);
+        const auto dynamicState = processor.getDynamicVisualState(i);
+        const float radius = isSelected ? selectedPointRadius : ((isMultiSelected ? pointRadius + 1.8f : pointRadius) + (isHovered ? 1.5f : 0.0f));
+        const auto modeColour = point.dynamicEnabled ? getDynamicBandColour(point) : ssp::ui::getStereoModeColour(point.stereoMode);
         float nodeAlpha = previousPoint.enabled && point.enabled ? 1.0f : (point.enabled ? easedTransition : (1.0f - easedTransition));
         if (soloPoint >= 0 && ! isSolo)
             nodeAlpha *= 0.34f;
 
-        const float pulse = isSolo ? (0.55f + 0.25f * std::sin((float) now * 0.015f)) : 0.0f;
+        const float dynamicPulse = point.dynamicEnabled ? dynamicState.activity : 0.0f;
+        const float pulse = isSolo ? (0.55f + 0.25f * std::sin((float) now * 0.015f)) : dynamicPulse;
         g.setColour(modeColour.withAlpha((isSelected ? 0.45f : 0.22f) * nodeAlpha + pulse * 0.18f));
         g.fillEllipse(position.x - radius - 4.0f, position.y - radius - 4.0f, (radius + 4.0f) * 2.0f, (radius + 4.0f) * 2.0f);
         if (isSolo)
@@ -455,12 +576,18 @@ void EqGraphComponent::paint(juce::Graphics& g)
             g.setColour(juce::Colour(0xff48d8cb).withAlpha(0.18f + pulse * 0.24f));
             g.fillEllipse(position.x - radius - 10.0f, position.y - radius - 10.0f, (radius + 10.0f) * 2.0f, (radius + 10.0f) * 2.0f);
         }
+        else if (point.dynamicEnabled)
+        {
+            const float ringRadius = radius + 7.0f + dynamicState.activity * 10.0f;
+            g.setColour(modeColour.withAlpha(0.15f + dynamicState.activity * 0.35f));
+            g.drawEllipse(position.x - ringRadius, position.y - ringRadius, ringRadius * 2.0f, ringRadius * 2.0f, 1.2f + dynamicState.activity * 1.4f);
+        }
 
         g.setColour(juce::Colour(0xff111822).withAlpha(nodeAlpha));
         g.fillEllipse(position.x - radius, position.y - radius, radius * 2.0f, radius * 2.0f);
 
         g.setColour((isSelected ? modeColour.brighter(0.25f) : modeColour).withAlpha(nodeAlpha));
-        g.drawEllipse(position.x - radius, position.y - radius, radius * 2.0f, radius * 2.0f, isSelected ? 2.8f : 1.8f);
+        g.drawEllipse(position.x - radius, position.y - radius, radius * 2.0f, radius * 2.0f, isSelected ? 2.8f : (isMultiSelected ? 2.3f : 1.8f));
 
         if (isHovered)
         {
@@ -481,6 +608,14 @@ void EqGraphComponent::paint(juce::Graphics& g)
                        juce::Justification::centredLeft, false);
         }
 
+        if (point.dynamicEnabled && dynamicState.activity > 0.01f)
+        {
+            g.setColour(modeColour.brighter(0.3f));
+            g.setFont(10.5f);
+            const auto grBounds = juce::Rectangle<int>((int) position.x + 10, (int) position.y + 8, 56, 14);
+            g.drawText(juce::String(dynamicState.effectiveGainDb, 1) + " dB", grBounds, juce::Justification::centredLeft, false);
+        }
+
         if (isHovered || isSolo)
         {
             const auto soloBounds = getSoloButtonBounds(i);
@@ -491,6 +626,14 @@ void EqGraphComponent::paint(juce::Graphics& g)
             g.setFont(juce::Font(11.0f, juce::Font::bold));
             g.drawText("S", soloBounds.toNearestInt(), juce::Justification::centred, false);
         }
+    }
+
+    if (marqueeSelecting && ! marqueeBounds.isEmpty())
+    {
+        g.setColour(juce::Colour(0xff63d0ff).withAlpha(0.12f));
+        g.fillRect(marqueeBounds);
+        g.setColour(juce::Colour(0xff9de7ff).withAlpha(0.72f));
+        g.drawRect(marqueeBounds, 1.2f);
     }
 
     g.restoreState();
@@ -570,6 +713,7 @@ void EqGraphComponent::mouseDown(const juce::MouseEvent& event)
         if (const int hit = hitTestPoint(event.position); hit >= 0)
         {
             processor.removePoint(hit);
+            selectedPoints.removeFirstMatchingValue(hit);
             dragPoint = -1;
             if (hit == selectedPoint)
                 selectPoint(-1);
@@ -579,35 +723,95 @@ void EqGraphComponent::mouseDown(const juce::MouseEvent& event)
     }
 
     dragPoint = hitTestPoint(event.position);
-    selectPoint(dragPoint);
+    dragStartPoints = processor.getPointsSnapshot();
+    dragStartPosition = event.position;
+    marqueeSelecting = false;
+    marqueeBounds = {};
+
+    if (dragPoint >= 0)
+    {
+        const bool additive = event.mods.isShiftDown() || event.mods.isCommandDown() || event.mods.isCtrlDown();
+        if (additive)
+        {
+            if (isPointSelected(dragPoint))
+                selectedPoints.removeFirstMatchingValue(dragPoint);
+            else
+                addPointToSelection(dragPoint, true);
+        }
+        else if (! isPointSelected(dragPoint))
+        {
+            clearSelection();
+            addPointToSelection(dragPoint, true);
+        }
+
+        selectPoint(dragPoint);
+        return;
+    }
+
+    marqueeSelecting = getPlotBounds().contains(event.getPosition());
+    marqueeAdditive = event.mods.isShiftDown() || event.mods.isCommandDown() || event.mods.isCtrlDown();
+    if (marqueeSelecting && ! marqueeAdditive)
+        clearSelection();
 }
 
 void EqGraphComponent::mouseDrag(const juce::MouseEvent& event)
 {
-    if (dragPoint < 0)
+    if (marqueeSelecting)
+    {
+        marqueeBounds = juce::Rectangle<float>(dragStartPosition, event.position).getIntersection(getPlotBounds().toFloat());
+        repaint();
+        return;
+    }
+
+    if (dragPoint < 0 || selectedPoints.isEmpty())
         return;
 
-    auto point = processor.getPoint(dragPoint);
-    if (!point.enabled)
-        return;
+    const auto plot = getPlotBounds().toFloat();
+    const float deltaNormalisedX = (event.position.x - dragStartPosition.x) / juce::jmax(1.0f, plot.getWidth());
+    const float deltaGain = juce::jmap((event.position.y - dragStartPosition.y) / juce::jmax(1.0f, plot.getHeight()),
+                                       0.0f, 1.0f, 0.0f, minGainDb - maxGainDb);
 
-    auto movedPoint = screenToPoint(event.position, point);
-    movedPoint.enabled = true;
-    if (!pointTypeUsesGain(point.type))
-        movedPoint.gainDb = point.gainDb;
+    for (int selectionIndex = 0; selectionIndex < selectedPoints.size(); ++selectionIndex)
+    {
+        const int pointIndex = selectedPoints.getReference(selectionIndex);
+        auto point = dragStartPoints[(size_t) pointIndex];
+        if (! point.enabled)
+            continue;
 
-    processor.setPoint(dragPoint, movedPoint);
+        point.frequency = normalisedToFrequency(frequencyToNormalised(point.frequency) + deltaNormalisedX);
+        if (pointTypeUsesGain(point.type))
+            point.gainDb = juce::jlimit(minGainDb, maxGainDb, point.gainDb + deltaGain);
+        processor.setPoint(pointIndex, point);
+    }
 }
 
 void EqGraphComponent::mouseUp(const juce::MouseEvent&)
 {
+    if (marqueeSelecting)
+        updateMarqueeSelection(marqueeAdditive);
+
     dragPoint = -1;
+    marqueeSelecting = false;
+    marqueeBounds = {};
 }
 
 void EqGraphComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
     if (!getPlotBounds().contains(event.getPosition()))
         return;
+
+    if (const int hit = hitTestPoint(event.position); hit >= 0)
+    {
+        auto point = processor.getPoint(hit);
+        if (point.enabled)
+        {
+            point.dynamicEnabled = ! point.dynamicEnabled;
+            point.dynamicRangeDb = juce::jmin(std::abs(point.gainDb), juce::jmax(0.0f, point.dynamicRangeDb));
+            processor.setPoint(hit, point);
+            selectPoint(hit);
+        }
+        return;
+    }
 
     if (processor.getEnabledPointCount() >= PluginProcessor::maxPoints)
         return;
@@ -655,8 +859,15 @@ void EqGraphComponent::mouseWheelMove(const juce::MouseEvent& event, const juce:
 
 void EqGraphComponent::setSelectedPoint(int index)
 {
+    clearSelection();
+    if (index >= 0)
+        addPointToSelection(index, false);
+
     if (selectedPoint == index)
+    {
+        repaint();
         return;
+    }
 
     selectedPoint = index;
     repaint();
@@ -690,6 +901,21 @@ juce::Rectangle<int> EqGraphComponent::getPlotBounds() const
 juce::Point<float> EqGraphComponent::pointToScreen(int pointIndex, const PluginProcessor::EqPoint& point) const
 {
     return pointToScreenForSnapshot(pointIndex, point, processor.getPointsSnapshot());
+}
+
+juce::Point<float> EqGraphComponent::pointToDisplayScreen(int pointIndex, const PluginProcessor::EqPoint& point) const
+{
+    const auto plot = getPlotBounds().toFloat();
+    const float x = plot.getX() + frequencyToNormalised(point.frequency) * plot.getWidth();
+    const float responseAtFrequency = point.dynamicEnabled
+        ? juce::jlimit(minGainDb, maxGainDb, processor.getBandResponseForFrequency(pointIndex, point.frequency))
+        : pointToScreen(pointIndex, point).y;
+
+    if (! point.dynamicEnabled)
+        return pointToScreen(pointIndex, point);
+
+    const float y = juce::jmap(responseAtFrequency, maxGainDb, minGainDb, plot.getY(), plot.getBottom());
+    return { x, y };
 }
 
 juce::Point<float> EqGraphComponent::pointToScreenForSnapshot(int pointIndex,
@@ -734,11 +960,58 @@ int EqGraphComponent::hitTestPoint(juce::Point<float> position) const
         if (!point.enabled)
             continue;
 
-        if (pointToScreen(i, point).getDistanceFrom(position) <= selectedPointRadius + 4.0f)
+        const auto screenPoint = point.dynamicEnabled ? pointToDisplayScreen(i, point) : pointToScreen(i, point);
+        const float hitRadius = point.dynamicEnabled ? selectedPointRadius + 10.0f : selectedPointRadius + 4.0f;
+        if (screenPoint.getDistanceFrom(position) <= hitRadius)
             return i;
     }
 
     return -1;
+}
+
+bool EqGraphComponent::isPointSelected(int index) const
+{
+    return selectedPoints.contains(index);
+}
+
+void EqGraphComponent::clearSelection()
+{
+    selectedPoints.clearQuick();
+}
+
+void EqGraphComponent::addPointToSelection(int index, bool makePrimary)
+{
+    if (juce::isPositiveAndBelow(index, PluginProcessor::maxPoints))
+        selectedPoints.addIfNotAlreadyThere(index);
+
+    if (makePrimary)
+        selectedPoint = index;
+}
+
+void EqGraphComponent::updateMarqueeSelection(bool additive)
+{
+    juce::ignoreUnused(additive);
+
+    const auto points = processor.getPointsSnapshot();
+    juce::Array<int> hits;
+    for (int i = 0; i < PluginProcessor::maxPoints; ++i)
+    {
+        if (! points[(size_t) i].enabled)
+            continue;
+        if (marqueeBounds.contains(pointToScreen(i, points[(size_t) i])))
+            hits.add(i);
+    }
+
+    if (! marqueeAdditive)
+        clearSelection();
+
+    for (auto index : hits)
+        selectedPoints.addIfNotAlreadyThere(index);
+
+    if (! hits.isEmpty())
+        selectPoint(hits.getFirst());
+    else if (! marqueeAdditive)
+        selectPoint(-1);
 }
 
 int EqGraphComponent::hitTestSoloButton(juce::Point<float> position) const
@@ -761,14 +1034,17 @@ juce::Rectangle<float> EqGraphComponent::getSoloButtonBounds(int pointIndex) con
     if (! juce::isPositiveAndBelow(pointIndex, PluginProcessor::maxPoints) || ! points[(size_t) pointIndex].enabled)
         return {};
 
-    const auto node = pointToScreen(pointIndex, points[(size_t) pointIndex]);
+    const auto& point = points[(size_t) pointIndex];
+    const auto node = point.dynamicEnabled ? pointToDisplayScreen(pointIndex, point) : pointToScreen(pointIndex, point);
     return juce::Rectangle<float>(18.0f, 18.0f).withCentre({ node.x + 17.0f, node.y - 17.0f });
 }
 
 void EqGraphComponent::selectPoint(int index)
 {
-    if (selectedPoint == index)
-        return;
+    if (index >= 0)
+        selectedPoints.addIfNotAlreadyThere(index);
+    else
+        clearSelection();
 
     selectedPoint = index;
     if (onSelectionChanged)

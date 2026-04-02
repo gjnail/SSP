@@ -28,6 +28,7 @@ target_sources(SSPSaturate
     PRIVATE
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
+        Source/SSPVectorUI.cpp
         Source/SaturateControlsComponent.cpp
 )
 

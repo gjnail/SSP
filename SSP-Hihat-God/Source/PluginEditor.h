@@ -10,12 +10,10 @@ public:
     explicit PluginEditor(PluginProcessor&);
     void paint(juce::Graphics&) override;
     void resized() override;
+    bool keyPressed(const juce::KeyPress&) override;
 
 private:
-    PluginProcessor& processor;
     HihatGodControlsComponent controls;
-    juce::Label titleLabel;
-    juce::Label hintLabel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditor)
 };

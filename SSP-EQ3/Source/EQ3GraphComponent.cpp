@@ -4,8 +4,8 @@ namespace
 {
 constexpr double minFrequency = 20.0;
 constexpr double maxFrequency = 20000.0;
-constexpr float graphMinDb = PluginProcessor::minGainDb;
-constexpr float graphMaxDb = PluginProcessor::maxGainDb;
+constexpr float graphDisplayMinDb = -12.0f;
+constexpr float graphDisplayMaxDb = 12.0f;
 constexpr double zeroTolerance = 1.0e-5;
 
 double xToFrequency(float x, juce::Rectangle<float> plot)
@@ -44,7 +44,7 @@ juce::Rectangle<float> EQ3GraphComponent::getPlotBounds() const
 {
     auto bounds = getLocalBounds().toFloat();
     auto content = bounds.reduced(14.0f, 12.0f);
-    content.removeFromTop(6.0f);
+    content.removeFromTop(18.0f);
     content.removeFromBottom(20.0f);
     content.removeFromLeft(8.0f);
     content.removeFromRight(8.0f);
@@ -61,8 +61,8 @@ float EQ3GraphComponent::frequencyToX(double frequency, juce::Rectangle<float> p
 
 float EQ3GraphComponent::responseToY(double responseDb, juce::Rectangle<float> plot) const
 {
-    const auto clamped = juce::jlimit((double) graphMinDb, (double) graphMaxDb, responseDb);
-    const auto proportion = (clamped - graphMaxDb) / (graphMinDb - graphMaxDb);
+    const auto clamped = juce::jlimit((double) graphDisplayMinDb, (double) graphDisplayMaxDb, responseDb);
+    const auto proportion = (clamped - graphDisplayMaxDb) / (graphDisplayMinDb - graphDisplayMaxDb);
     return plot.getY() + plot.getHeight() * (float) proportion;
 }
 
@@ -175,10 +175,14 @@ void EQ3GraphComponent::paint(juce::Graphics& g)
     g.drawText("1 kHz", juce::Rectangle<float>(frequencyToX(1000.0, plot) - 20.0f, footer.getY(), 40.0f, footer.getHeight()).toNearestInt(),
                juce::Justification::centred, false);
 
-    auto rightScale = juce::Rectangle<float>(plot.getRight() - 40.0f, plot.getY() + 4.0f, 40.0f, plot.getHeight() - 8.0f);
+    auto rightScale = juce::Rectangle<float>(plot.getRight() - 42.0f, plot.getY() + 4.0f, 42.0f, plot.getHeight() - 8.0f);
     g.drawText("+12", juce::Rectangle<float>(rightScale.getX(), responseToY(12.0, plot) - 8.0f, rightScale.getWidth(), 16.0f).toNearestInt(),
                juce::Justification::centredRight, false);
+    g.drawText("+6", juce::Rectangle<float>(rightScale.getX(), responseToY(6.0, plot) - 8.0f, rightScale.getWidth(), 16.0f).toNearestInt(),
+               juce::Justification::centredRight, false);
     g.drawText("0", juce::Rectangle<float>(rightScale.getX(), zeroY - 8.0f, rightScale.getWidth(), 16.0f).toNearestInt(),
+               juce::Justification::centredRight, false);
+    g.drawText("-6", juce::Rectangle<float>(rightScale.getX(), responseToY(-6.0, plot) - 8.0f, rightScale.getWidth(), 16.0f).toNearestInt(),
                juce::Justification::centredRight, false);
     g.drawText("-12", juce::Rectangle<float>(rightScale.getX(), responseToY(-12.0, plot) - 8.0f, rightScale.getWidth(), 16.0f).toNearestInt(),
                juce::Justification::centredRight, false);

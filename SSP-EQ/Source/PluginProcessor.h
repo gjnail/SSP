@@ -2,6 +2,9 @@
 
 #include <JuceHeader.h>
 #include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 
 class PluginProcessor final : public juce::AudioProcessor,
                               private juce::AudioProcessorValueTreeState::Listener
@@ -43,6 +46,19 @@ public:
         linearPhase
     };
 
+    enum DynamicDirection
+    {
+        dynamicAbove = 0,
+        dynamicBelow
+    };
+
+    enum SidechainSource
+    {
+        sidechainInternal = 0,
+        sidechainExternal,
+        sidechainBand
+    };
+
     struct EqPoint
     {
         bool enabled = false;
@@ -52,6 +68,18 @@ public:
         int type = bell;
         int slopeIndex = 1;
         int stereoMode = stereo;
+        bool dynamicEnabled = false;
+        float dynamicThresholdDb = -24.0f;
+        float dynamicRatio = 4.0f;
+        float dynamicAttackMs = 10.0f;
+        float dynamicReleaseMs = 100.0f;
+        float dynamicKneeDb = 6.0f;
+        int dynamicDirection = dynamicAbove;
+        float dynamicRangeDb = 24.0f;
+        int sidechainSource = sidechainInternal;
+        int sidechainBandIndex = 0;
+        float sidechainHighPassHz = 20.0f;
+        float sidechainLowPassHz = 20000.0f;
     };
 
     static constexpr int maxPoints = 24;
@@ -74,6 +102,16 @@ public:
         int numStages = 0;
     };
 
+    struct DynamicVisualState
+    {
+        bool enabled = false;
+        float detectorLevelDb = -96.0f;
+        float activity = 0.0f;
+        float effectiveGainDb = 0.0f;
+        float maxGainDb = 0.0f;
+        float activeResponseDb = 0.0f;
+    };
+
     struct PresetBand
     {
         bool enabled = true;
@@ -83,6 +121,18 @@ public:
         float q = 1.0f;
         int slope = 12;
         juce::String stereoMode = "stereo";
+        bool dynamicEnabled = false;
+        float dynamicThresholdDb = -24.0f;
+        float dynamicRatio = 4.0f;
+        float dynamicAttackMs = 10.0f;
+        float dynamicReleaseMs = 100.0f;
+        float dynamicKneeDb = 6.0f;
+        juce::String dynamicDirection = "above";
+        float dynamicRangeDb = 24.0f;
+        juce::String sidechainSource = "internal";
+        int sidechainBandIndex = 0;
+        float sidechainHighPassHz = 20.0f;
+        float sidechainLowPassHz = 20000.0f;
     };
 
     struct PresetRecord
@@ -140,6 +190,8 @@ public:
     static const juce::StringArray& getAnalyzerModeNames();
     static const juce::StringArray& getProcessingModeNames();
     static const juce::StringArray& getAnalyzerResolutionNames();
+    static const juce::StringArray& getDynamicDirectionNames();
+    static const juce::StringArray& getSidechainSourceNames();
     static const juce::Array<PresetRecord>& getFactoryPresets();
 
     EqPoint getPoint(int index) const;
@@ -151,6 +203,8 @@ public:
     float getResponseForFrequency(float frequency) const;
     float getResponseForFrequencyByStereoMode(float frequency, int stereoMode) const;
     float getBandResponseForFrequency(int index, float frequency) const;
+    float getBandSetResponseForFrequency(int index, float frequency) const;
+    DynamicVisualState getDynamicVisualState(int index) const;
     int getEnabledPointCount() const;
     AnalyzerFrame getAnalyzerFrameCopy() const;
     double getCurrentSampleRate() const noexcept { return currentSampleRate; }
@@ -199,6 +253,11 @@ public:
     bool undoRandomizeCurrentSlot();
     bool hasRandomizeUndo() const noexcept;
     int consumePendingVisualTransitionMs(int fallbackMs);
+    int getCurrentLatencySamples() const noexcept;
+    double getCurrentLatencyMs() const noexcept;
+    void setBandSidechainListen(int pointIndex, bool shouldListen);
+    bool isBandSidechainListening(int pointIndex) const noexcept;
+    bool hasDynamicPointEnabled() const;
 
 private:
     struct PresetStateSnapshot
@@ -222,6 +281,7 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     void syncPointCacheFromParameters();
+    void updateVisualPointCache();
     void initialisePresetTracking();
     void restorePresetMetadataFromState();
     void applyPresetRecord(const PresetRecord& preset, bool updateLoadedPresetReference);
@@ -241,14 +301,41 @@ private:
     void pushPostSpectrumSample(float sample) noexcept;
     void pushSidechainSpectrumSample(float sample) noexcept;
     void performSpectrumAnalysis(const std::array<float, fftSize>& source, SpectrumArray& destination, float decayAmount);
-    float processPointForDomain(int domainIndex, int pointIndex, float sample);
+    float processPointForDomain(int modeIndex, int domainIndex, int pointIndex, float sample, float wetMix = 1.0f);
     void updateFilterStates();
+    void resetDynamicState();
+    void ensureScratchBuffers(int numSamples);
+    void computeDynamicControlSignals(const juce::AudioBuffer<float>& mainBuffer,
+                                      const juce::AudioBuffer<float>& sidechainBuffer);
+    void renderProcessingMode(int processingMode,
+                              const juce::AudioBuffer<float>& source,
+                              juce::AudioBuffer<float>& destination);
+    void renderZeroLatencyMode(const juce::AudioBuffer<float>& source,
+                               juce::AudioBuffer<float>& destination);
+    void renderNaturalPhaseMode(const juce::AudioBuffer<float>& source,
+                                juce::AudioBuffer<float>& destination);
+    void renderLinearPhaseMode(const juce::AudioBuffer<float>& source,
+                               juce::AudioBuffer<float>& destination);
+    void renderDynamicIirOverlay(int modeIndex,
+                                 const juce::AudioBuffer<float>& source,
+                                 juce::AudioBuffer<float>& destination);
+    void updateDynamicBandSetup(int pointIndex, float effectiveGainDb);
+    void updateNaturalPhaseCompensation();
+    void updateLatencyState();
+    void scheduleLinearFirRebuild();
+    void linearFirWorkerLoop();
+    void loadPendingLinearImpulseResponses();
 
     double currentSampleRate = 44100.0;
-    std::array<std::array<std::array<juce::IIRFilter, maxStagesPerPoint>, maxPoints>, 4> filters;
+    std::array<std::array<std::array<std::array<juce::IIRFilter, maxStagesPerPoint>, maxPoints>, 4>, 3> filters;
+    std::array<std::array<std::array<juce::IIRFilter, maxStagesPerPoint>, maxPoints>, 4> naturalPhaseCompensationFilters;
+    std::array<juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear>, 2> naturalPhaseDelayLines;
     mutable juce::SpinLock stateLock;
     PointArray pointCache{};
+    PointArray visualPointCache{};
     std::array<PointFilterSetup, maxPoints> coefficientCache{};
+    std::array<PointFilterSetup, maxPoints> setCoefficientCache{};
+    std::array<DynamicVisualState, maxPoints> dynamicVisualStates{};
     juce::dsp::FFT fft{fftOrder};
     juce::dsp::WindowingFunction<float> fftWindow{fftSize, juce::dsp::WindowingFunction<float>::hann, true};
     std::array<float, fftSize> preSpectrumFifo{};
@@ -285,6 +372,53 @@ private:
     juce::IIRFilter soloLowPassLeft;
     juce::IIRFilter soloLowPassRight;
     std::atomic<int> pendingVisualTransitionMs{90};
+    struct DynamicRuntime
+    {
+        juce::IIRFilter detectorPrimary;
+        juce::IIRFilter detectorHighPass;
+        juce::IIRFilter detectorLowPass;
+        float smoothedPower = 0.0f;
+        float lastEffectiveGainDb = 0.0f;
+        float lastActivity = 0.0f;
+        float lastMonitorSample = 0.0f;
+    };
+    std::array<DynamicRuntime, maxPoints> dynamicRuntime;
+    std::array<std::vector<float>, maxPoints> blockEffectiveGainDb;
+    std::array<std::vector<float>, maxPoints> blockActivity;
+    std::vector<float> blockSidechainListen;
+    juce::AudioBuffer<float> scratchInputBuffer;
+    juce::AudioBuffer<float> scratchRenderBufferA;
+    juce::AudioBuffer<float> scratchRenderBufferB;
+    juce::AudioBuffer<float> scratchRenderBufferC;
+    juce::AudioBuffer<float> linearMidBuffer;
+    juce::AudioBuffer<float> linearSideBuffer;
+    juce::AudioBuffer<float> linearTempMonoBuffer;
+    juce::dsp::ConvolutionMessageQueue convolutionQueue;
+    std::array<std::unique_ptr<juce::dsp::Convolution>, 6> linearPhaseConvolvers;
+    int linearPhaseKernelSize = 4096;
+    int linearPhaseGroupDelaySamples = 2048;
+    int naturalPhaseLatencySamples = 0;
+    std::atomic<int> currentLatencySamples{0};
+    int activeProcessingMode = zeroLatency;
+    int previousProcessingMode = zeroLatency;
+    int processingModeFadeTotalSamples = 0;
+    int processingModeFadeRemainingSamples = 0;
+    int sidechainListenPointIndex = -1;
+    struct LinearImpulseSet
+    {
+        std::array<juce::AudioBuffer<float>, 6> responses;
+        int kernelSize = 4096;
+        int groupDelaySamples = 2048;
+        bool valid = false;
+    };
+    std::mutex linearIrMutex;
+    std::condition_variable linearIrCondition;
+    std::thread linearIrWorker;
+    PointArray linearIrRequestedPoints{};
+    LinearImpulseSet linearIrReadySet;
+    bool linearIrDirty = false;
+    bool linearIrReady = false;
+    bool linearIrExit = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };
