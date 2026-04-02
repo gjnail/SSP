@@ -100,6 +100,18 @@ void ResonatorGraphComponent::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0xff8aaad0));
     g.setFont(12.0f);
     g.drawText(processor.getCurrentChordLabel(), 18, 34, 320, 16, juce::Justification::centredLeft, false);
+    g.drawText(processor.getCurrentMotionStatus(), getWidth() - 260, 16, 242, 16, juce::Justification::centredRight, false);
+    g.drawText(processor.getCurrentSourceStatus(), getWidth() - 260, 34, 242, 16, juce::Justification::centredRight, false);
+
+    if (processor.isDifferenceSoloEnabled())
+    {
+        auto diffBounds = juce::Rectangle<float>((float) getWidth() - 142.0f, 18.0f, 82.0f, 24.0f);
+        g.setColour(juce::Colour(0xe0ffd55e));
+        g.fillRoundedRectangle(diffBounds, 9.0f);
+        g.setColour(juce::Colour(0xff10141a));
+        g.setFont(juce::Font(12.0f, juce::Font::bold));
+        g.drawText("DIFF SOLO", diffBounds.toNearestInt(), juce::Justification::centred, false);
+    }
 
     const auto plot = getPlotBounds();
     g.setColour(juce::Colour(0xff111924));
@@ -137,6 +149,8 @@ void ResonatorGraphComponent::paint(juce::Graphics& g)
     const float resonance = processor.getResonanceAmount();
     const float brightness = processor.getBrightnessAmount();
     const auto now = (float) juce::Time::getMillisecondCounter();
+    const float motionPhase = processor.getVisualMotionPhase();
+    const float motionDepth = processor.getMotionDepthAmount();
 
     auto drawAnalyzer = [&](const PluginProcessor::SpectrumArray& spectrum, juce::Colour topColour, juce::Colour strokeColour)
     {
@@ -233,7 +247,8 @@ void ResonatorGraphComponent::paint(juce::Graphics& g)
         const float x = frequencyToX(voice.frequency, plot);
         const float profile = buildResonanceProfile(voice.frequency, voices, resonance, brightness);
         const float y = juce::jmap(profile, 0.0f, 1.35f, (float) plot.getBottom() - 10.0f, (float) plot.getY() + 50.0f);
-        const float pulse = 0.72f + 0.2f * std::sin(now * 0.0045f + (float) i * 0.7f);
+        const float pulse = 0.72f + 0.2f * std::sin(now * 0.0045f + (float) i * 0.7f + motionPhase * juce::MathConstants<float>::twoPi)
+            + motionDepth * 0.08f;
 
         juce::ColourGradient beam(colour.withAlpha(0.42f * pulse), x, (float) plot.getY(),
                                   colour.withAlpha(0.0f), x, (float) plot.getBottom(), false);
@@ -284,5 +299,21 @@ void ResonatorGraphComponent::paint(juce::Graphics& g)
                plot.getWidth(),
                16,
                juce::Justification::centredRight,
+               false);
+
+    g.drawText("Vowel " + processor.getCurrentVowelName() + "  |  " + processor.getCurrentProtectionStatus(),
+               plot.getX(),
+               plot.getBottom() + 20,
+               plot.getWidth(),
+               14,
+               juce::Justification::centredRight,
+               false);
+
+    g.drawText(processor.getCurrentMonitorStatus(),
+               plot.getX(),
+               plot.getBottom() + 20,
+               plot.getWidth() / 2,
+               14,
+               juce::Justification::centredLeft,
                false);
 }
