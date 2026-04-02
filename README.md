@@ -109,9 +109,11 @@ Behavior:
 | --- | --- | --- | --- | --- |
 | `Simple-Sidechain` | SSP Simple Sidechain | Sidechain / pump processor with audio, BPM-sync, and MIDI triggering | `SSPSimpleSidechain_VST3`, `SSPSimpleSidechain_Standalone` | Windows + macOS |
 | `SSP-3OSC` | SSP Reactor | 3-oscillator synth with modulation, presets, and a full effects rack | `SSP3OSC_VST3`, `SSP3OSC_Standalone` | Windows only |
+| `SSP-3D-Waveshaper` | SSP 3D Waveshaper | Morphing wavetable-style distortion with 3D table visualization | `SSP3DWaveshaper_VST3`, `SSP3DWaveshaper_Standalone` | Windows + macOS |
 | `SSP-Beef` | SSP Beef | One-knob saturation and compression thickener | `SSPBeef_VST3`, `SSPBeef_Standalone` | Windows only |
 | `SSP-Clipper` | SSP Clipper | Clipping / loudness shaping processor | `SSPClipper_VST3`, `SSPClipper_Standalone` | Windows + macOS |
 | `SSP-Comb` | SSP Comb | Comb-filter style resonance and tone effect | `SSPComb_VST3`, `SSPComb_Standalone` | Windows + macOS |
+| `SSP-Hyper-Resonance` | SSP Hyper Resonance | Disperser-style all-pass phase resonator for transient bloom and spectral smear | `SSPHyperResonance_VST3`, `SSPHyperResonance_Standalone` | Windows + macOS |
 | `SSP-Delay` | SSP Delay | Delay effect | `SSPDelay_VST3`, `SSPDelay_Standalone` | Windows + macOS |
 | `SSP-Echo` | SSP Echo | Echo / ambience effect | `SSPEcho_VST3`, `SSPEcho_Standalone` | Windows + macOS |
 | `SSP-EQ` | SSP EQ | Equalizer plugin | `SSPEQ_VST3`, `SSPEQ_Standalone` | Windows + macOS |

@@ -4,6 +4,9 @@ namespace
 {
 juce::String formatDb(double value)
 {
+    if (value <= -95.95)
+        return "-inf dB";
+
     const auto rounded = juce::roundToInt((float) value * 10.0f) / 10.0f;
 
     if (std::abs(rounded) < 0.05f)

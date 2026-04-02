@@ -4,8 +4,8 @@ namespace
 {
 constexpr double minFrequency = 20.0;
 constexpr double maxFrequency = 20000.0;
-constexpr float graphMinDb = PluginProcessor::minGainDb;
-constexpr float graphMaxDb = PluginProcessor::maxGainDb;
+constexpr float graphDisplayMinDb = -12.0f;
+constexpr float graphDisplayMaxDb = 12.0f;
 constexpr double zeroTolerance = 1.0e-5;
 
 double xToFrequency(float x, juce::Rectangle<float> plot)
@@ -61,8 +61,8 @@ float EQ3GraphComponent::frequencyToX(double frequency, juce::Rectangle<float> p
 
 float EQ3GraphComponent::responseToY(double responseDb, juce::Rectangle<float> plot) const
 {
-    const auto clamped = juce::jlimit((double) graphMinDb, (double) graphMaxDb, responseDb);
-    const auto proportion = (clamped - graphMaxDb) / (graphMinDb - graphMaxDb);
+    const auto clamped = juce::jlimit((double) graphDisplayMinDb, (double) graphDisplayMaxDb, responseDb);
+    const auto proportion = (clamped - graphDisplayMaxDb) / (graphDisplayMinDb - graphDisplayMaxDb);
     return plot.getY() + plot.getHeight() * (float) proportion;
 }
 
@@ -75,7 +75,7 @@ void EQ3GraphComponent::paint(juce::Graphics& g)
     const auto zeroY = responseToY(0.0, plot);
 
     const std::array<double, 10> freqLines { 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0 };
-    const std::array<float, 7> gainLines { -96.0f, -48.0f, -24.0f, -12.0f, 0.0f, 6.0f, 12.0f };
+    const std::array<float, 5> gainLines { -12.0f, -6.0f, 0.0f, 6.0f, 12.0f };
 
     g.setColour(juce::Colours::white.withAlpha(0.035f));
     for (auto gain : gainLines)
@@ -178,10 +178,12 @@ void EQ3GraphComponent::paint(juce::Graphics& g)
     auto rightScale = juce::Rectangle<float>(plot.getRight() - 42.0f, plot.getY() + 4.0f, 42.0f, plot.getHeight() - 8.0f);
     g.drawText("+12", juce::Rectangle<float>(rightScale.getX(), responseToY(12.0, plot) - 8.0f, rightScale.getWidth(), 16.0f).toNearestInt(),
                juce::Justification::centredRight, false);
+    g.drawText("+6", juce::Rectangle<float>(rightScale.getX(), responseToY(6.0, plot) - 8.0f, rightScale.getWidth(), 16.0f).toNearestInt(),
+               juce::Justification::centredRight, false);
     g.drawText("0", juce::Rectangle<float>(rightScale.getX(), zeroY - 8.0f, rightScale.getWidth(), 16.0f).toNearestInt(),
                juce::Justification::centredRight, false);
-    g.drawText("-24", juce::Rectangle<float>(rightScale.getX(), responseToY(-24.0, plot) - 8.0f, rightScale.getWidth(), 16.0f).toNearestInt(),
+    g.drawText("-6", juce::Rectangle<float>(rightScale.getX(), responseToY(-6.0, plot) - 8.0f, rightScale.getWidth(), 16.0f).toNearestInt(),
                juce::Justification::centredRight, false);
-    g.drawText("-96", juce::Rectangle<float>(rightScale.getX(), responseToY(-96.0, plot) - 8.0f, rightScale.getWidth(), 16.0f).toNearestInt(),
+    g.drawText("-12", juce::Rectangle<float>(rightScale.getX(), responseToY(-12.0, plot) - 8.0f, rightScale.getWidth(), 16.0f).toNearestInt(),
                juce::Justification::centredRight, false);
 }

@@ -8,12 +8,10 @@ class PluginProcessor final : public juce::AudioProcessor
 {
 public:
     static constexpr float minGainDb = -96.0f;
-    static constexpr float maxGainDb = 12.0f;
-    static constexpr float lowShelfFrequencyHz = 200.0f;
-    static constexpr float midFrequencyHz = 1000.0f;
-    static constexpr float midQ = 0.7f;
-    static constexpr float shelfQ = 0.70710678f;
-    static constexpr float highShelfFrequencyHz = 5000.0f;
+    static constexpr float maxGainDb = 6.0f;
+    static constexpr float lowCrossoverHz = 250.0f;
+    static constexpr float highCrossoverHz = 2500.0f;
+    static constexpr float crossoverQ = 0.70710678f;
 
     PluginProcessor();
     ~PluginProcessor() override;
@@ -48,18 +46,21 @@ public:
     double getResponseForFrequency(double frequency) const;
     double getCurrentSampleRate() const noexcept { return currentSampleRate; }
 
-    static juce::IIRCoefficients makeLowShelfCoefficients(double sampleRate, double frequency, double gainDb);
-    static juce::IIRCoefficients makePeakCoefficients(double sampleRate, double frequency, double q, double gainDb);
-    static juce::IIRCoefficients makeHighShelfCoefficients(double sampleRate, double frequency, double gainDb);
+    static juce::IIRCoefficients makeLowPassCoefficients(double sampleRate, double frequency);
+    static juce::IIRCoefficients makeHighPassCoefficients(double sampleRate, double frequency);
     static double getMagnitudeForFrequency(const juce::IIRCoefficients& coefficients, double frequency, double sampleRate);
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     float getParameterValue(const juce::String& parameterId) const;
-    void updateFilterCoefficients(float lowGainDb, float midGainDb, float highGainDb);
+    void updateFilterCoefficients();
 
-    std::array<std::array<juce::IIRFilter, 2>, 3> filters{};
-    std::array<juce::IIRCoefficients, 3> currentCoefficients{};
+    std::array<std::array<juce::IIRFilter, 2>, 2> lowBandFilters{};
+    std::array<std::array<juce::IIRFilter, 2>, 4> midBandFilters{};
+    std::array<std::array<juce::IIRFilter, 2>, 2> highBandFilters{};
+    std::array<juce::IIRCoefficients, 2> lowBandCoefficients{};
+    std::array<juce::IIRCoefficients, 4> midBandCoefficients{};
+    std::array<juce::IIRCoefficients, 2> highBandCoefficients{};
     juce::SmoothedValue<float> lowGainSmoothed;
     juce::SmoothedValue<float> midGainSmoothed;
     juce::SmoothedValue<float> highGainSmoothed;

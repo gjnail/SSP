@@ -3,18 +3,27 @@
 
 namespace
 {
-constexpr int lowBandIndex = 0;
-constexpr int midBandIndex = 1;
-constexpr int highBandIndex = 2;
-
-juce::IIRCoefficients makeIdentity()
-{
-    return { 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f };
-}
+constexpr float negativeCutTaper = 4.0f;
 
 double clampFrequency(double sampleRate, double frequency)
 {
     return juce::jlimit(20.0, juce::jmax(20.0, sampleRate * 0.495), frequency);
+}
+
+std::complex<double> getComplexResponseForFrequency(const juce::IIRCoefficients& coefficients, double frequency, double sampleRate)
+{
+    const auto w = juce::MathConstants<double>::twoPi * clampFrequency(sampleRate, frequency) / sampleRate;
+    const auto* c = coefficients.coefficients;
+    const std::complex<double> z1(std::cos(w), -std::sin(w));
+    const std::complex<double> z2(std::cos(2.0 * w), -std::sin(2.0 * w));
+
+    const std::complex<double> numerator = (double) c[0] + (double) c[1] * z1 + (double) c[2] * z2;
+    const std::complex<double> denominator = 1.0 + (double) c[3] * z1 + (double) c[4] * z2;
+
+    if (std::abs(denominator) <= 0.0)
+        return { 1.0, 0.0 };
+
+    return numerator / denominator;
 }
 }
 
@@ -35,7 +44,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         {
             const auto clamped = juce::jlimit(0.0f, 1.0f, normalised);
             if (clamped <= 0.5f)
-                return juce::jmap(clamped * 2.0f, start, 0.0f);
+            {
+                const auto distanceFromCentre = 1.0f - clamped * 2.0f;
+                return start * std::pow(distanceFromCentre, negativeCutTaper);
+            }
 
             return juce::jmap((clamped - 0.5f) * 2.0f, 0.0f, end);
         },
@@ -43,7 +55,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         {
             const auto clamped = juce::jlimit(start, end, value);
             if (clamped <= 0.0f)
-                return 0.5f * (clamped - start) / (0.0f - start);
+            {
+                const auto distanceFromCentre = std::pow(clamped / start, 1.0f / negativeCutTaper);
+                return 0.5f * (1.0f - distanceFromCentre);
+            }
 
             return 0.5f + 0.5f * (clamped / end);
         },
@@ -79,16 +94,19 @@ void PluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     midGainSmoothed.setCurrentAndTargetValue(getParameterValue("mid"));
     highGainSmoothed.setCurrentAndTargetValue(getParameterValue("high"));
 
-    for (auto& band : filters)
+    for (auto& band : lowBandFilters)
         for (auto& filter : band)
             filter.reset();
 
-    currentCoefficients[(size_t) lowBandIndex] = makeIdentity();
-    currentCoefficients[(size_t) midBandIndex] = makeIdentity();
-    currentCoefficients[(size_t) highBandIndex] = makeIdentity();
-    updateFilterCoefficients(lowGainSmoothed.getCurrentValue(),
-                             midGainSmoothed.getCurrentValue(),
-                             highGainSmoothed.getCurrentValue());
+    for (auto& band : midBandFilters)
+        for (auto& filter : band)
+            filter.reset();
+
+    for (auto& band : highBandFilters)
+        for (auto& filter : band)
+            filter.reset();
+
+    updateFilterCoefficients();
 }
 
 void PluginProcessor::releaseResources()
@@ -123,35 +141,34 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     midGainSmoothed.setTargetValue(getParameterValue("mid"));
     highGainSmoothed.setTargetValue(getParameterValue("high"));
 
-    float previousLow = std::numeric_limits<float>::quiet_NaN();
-    float previousMid = std::numeric_limits<float>::quiet_NaN();
-    float previousHigh = std::numeric_limits<float>::quiet_NaN();
-
     for (int sample = 0; sample < numSamples; ++sample)
     {
         const auto lowGain = lowGainSmoothed.getNextValue();
         const auto midGain = midGainSmoothed.getNextValue();
         const auto highGain = highGainSmoothed.getNextValue();
-
-        if (sample == 0
-            || std::abs(lowGain - previousLow) > 1.0e-7f
-            || std::abs(midGain - previousMid) > 1.0e-7f
-            || std::abs(highGain - previousHigh) > 1.0e-7f)
-        {
-            updateFilterCoefficients(lowGain, midGain, highGain);
-            previousLow = lowGain;
-            previousMid = midGain;
-            previousHigh = highGain;
-        }
+        const auto lowGainLinear = juce::Decibels::decibelsToGain(lowGain);
+        const auto midGainLinear = juce::Decibels::decibelsToGain(midGain);
+        const auto highGainLinear = juce::Decibels::decibelsToGain(highGain);
 
         for (int channel = 0; channel < numChannels; ++channel)
         {
             const auto input = dryBuffer.getReadPointer(channel)[sample];
-            auto wet = filters[(size_t) lowBandIndex][(size_t) channel].processSingleSampleRaw(input);
-            wet = filters[(size_t) midBandIndex][(size_t) channel].processSingleSampleRaw(wet);
-            wet = filters[(size_t) highBandIndex][(size_t) channel].processSingleSampleRaw(wet);
 
-            buffer.getWritePointer(channel)[sample] = wet;
+            auto low = input;
+            for (auto& stage : lowBandFilters)
+                low = stage[(size_t) channel].processSingleSampleRaw(low);
+
+            auto mid = input;
+            for (auto& stage : midBandFilters)
+                mid = stage[(size_t) channel].processSingleSampleRaw(mid);
+
+            auto high = input;
+            for (auto& stage : highBandFilters)
+                high = stage[(size_t) channel].processSingleSampleRaw(high);
+
+            buffer.getWritePointer(channel)[sample] = low * lowGainLinear
+                                                      + mid * midGainLinear
+                                                      + high * highGainLinear;
         }
     }
 
@@ -180,51 +197,44 @@ float PluginProcessor::getParameterValue(const juce::String& parameterId) const
     return 0.0f;
 }
 
-void PluginProcessor::updateFilterCoefficients(float lowGainDb, float midGainDb, float highGainDb)
+void PluginProcessor::updateFilterCoefficients()
 {
-    currentCoefficients[(size_t) lowBandIndex] = makeLowShelfCoefficients(currentSampleRate, lowShelfFrequencyHz, lowGainDb);
-    currentCoefficients[(size_t) midBandIndex] = makePeakCoefficients(currentSampleRate, midFrequencyHz, midQ, midGainDb);
-    currentCoefficients[(size_t) highBandIndex] = makeHighShelfCoefficients(currentSampleRate, highShelfFrequencyHz, highGainDb);
+    lowBandCoefficients[0] = makeLowPassCoefficients(currentSampleRate, lowCrossoverHz);
+    lowBandCoefficients[1] = makeLowPassCoefficients(currentSampleRate, lowCrossoverHz);
+
+    midBandCoefficients[0] = makeHighPassCoefficients(currentSampleRate, lowCrossoverHz);
+    midBandCoefficients[1] = makeHighPassCoefficients(currentSampleRate, lowCrossoverHz);
+    midBandCoefficients[2] = makeLowPassCoefficients(currentSampleRate, highCrossoverHz);
+    midBandCoefficients[3] = makeLowPassCoefficients(currentSampleRate, highCrossoverHz);
+
+    highBandCoefficients[0] = makeHighPassCoefficients(currentSampleRate, highCrossoverHz);
+    highBandCoefficients[1] = makeHighPassCoefficients(currentSampleRate, highCrossoverHz);
 
     for (int channel = 0; channel < 2; ++channel)
     {
-        filters[(size_t) lowBandIndex][(size_t) channel].setCoefficients(currentCoefficients[(size_t) lowBandIndex]);
-        filters[(size_t) midBandIndex][(size_t) channel].setCoefficients(currentCoefficients[(size_t) midBandIndex]);
-        filters[(size_t) highBandIndex][(size_t) channel].setCoefficients(currentCoefficients[(size_t) highBandIndex]);
+        for (size_t stage = 0; stage < lowBandFilters.size(); ++stage)
+            lowBandFilters[stage][(size_t) channel].setCoefficients(lowBandCoefficients[stage]);
+
+        for (size_t stage = 0; stage < midBandFilters.size(); ++stage)
+            midBandFilters[stage][(size_t) channel].setCoefficients(midBandCoefficients[stage]);
+
+        for (size_t stage = 0; stage < highBandFilters.size(); ++stage)
+            highBandFilters[stage][(size_t) channel].setCoefficients(highBandCoefficients[stage]);
     }
 }
 
-juce::IIRCoefficients PluginProcessor::makeLowShelfCoefficients(double sampleRate, double frequency, double gainDb)
+juce::IIRCoefficients PluginProcessor::makeLowPassCoefficients(double sampleRate, double frequency)
 {
-    if (std::abs(gainDb) < 1.0e-8)
-        return makeIdentity();
+    return juce::IIRCoefficients::makeLowPass(sampleRate,
+                                              (float) clampFrequency(sampleRate, frequency),
+                                              crossoverQ);
+}
 
-    return juce::IIRCoefficients::makeLowShelf(sampleRate,
+juce::IIRCoefficients PluginProcessor::makeHighPassCoefficients(double sampleRate, double frequency)
+{
+    return juce::IIRCoefficients::makeHighPass(sampleRate,
                                                (float) clampFrequency(sampleRate, frequency),
-                                               shelfQ,
-                                               juce::Decibels::decibelsToGain((float) gainDb));
-}
-
-juce::IIRCoefficients PluginProcessor::makePeakCoefficients(double sampleRate, double frequency, double q, double gainDb)
-{
-    if (std::abs(gainDb) < 1.0e-8)
-        return makeIdentity();
-
-    return juce::IIRCoefficients::makePeakFilter(sampleRate,
-                                                 (float) clampFrequency(sampleRate, frequency),
-                                                 (float) juce::jmax(0.0001, q),
-                                                 juce::Decibels::decibelsToGain((float) gainDb));
-}
-
-juce::IIRCoefficients PluginProcessor::makeHighShelfCoefficients(double sampleRate, double frequency, double gainDb)
-{
-    if (std::abs(gainDb) < 1.0e-8)
-        return makeIdentity();
-
-    return juce::IIRCoefficients::makeHighShelf(sampleRate,
-                                                (float) clampFrequency(sampleRate, frequency),
-                                                shelfQ,
-                                                juce::Decibels::decibelsToGain((float) gainDb));
+                                               crossoverQ);
 }
 
 double PluginProcessor::getMagnitudeForFrequency(const juce::IIRCoefficients& coefficients, double frequency, double sampleRate)
@@ -250,13 +260,19 @@ double PluginProcessor::getMagnitudeForFrequency(const juce::IIRCoefficients& co
 double PluginProcessor::getResponseForFrequency(double frequency) const
 {
     const auto sampleRate = currentSampleRate > 0.0 ? currentSampleRate : 44100.0;
-    const auto low = makeLowShelfCoefficients(sampleRate, lowShelfFrequencyHz, getParameterValue("low"));
-    const auto mid = makePeakCoefficients(sampleRate, midFrequencyHz, midQ, getParameterValue("mid"));
-    const auto high = makeHighShelfCoefficients(sampleRate, highShelfFrequencyHz, getParameterValue("high"));
+    const auto lowGain = juce::Decibels::decibelsToGain(getParameterValue("low"));
+    const auto midGain = juce::Decibels::decibelsToGain(getParameterValue("mid"));
+    const auto highGain = juce::Decibels::decibelsToGain(getParameterValue("high"));
 
-    const auto magnitude = getMagnitudeForFrequency(low, frequency, sampleRate)
-                           * getMagnitudeForFrequency(mid, frequency, sampleRate)
-                           * getMagnitudeForFrequency(high, frequency, sampleRate);
+    const auto lowPass = getComplexResponseForFrequency(makeLowPassCoefficients(sampleRate, lowCrossoverHz), frequency, sampleRate);
+    const auto highPassLow = getComplexResponseForFrequency(makeHighPassCoefficients(sampleRate, lowCrossoverHz), frequency, sampleRate);
+    const auto lowPassHigh = getComplexResponseForFrequency(makeLowPassCoefficients(sampleRate, highCrossoverHz), frequency, sampleRate);
+    const auto highPassHigh = getComplexResponseForFrequency(makeHighPassCoefficients(sampleRate, highCrossoverHz), frequency, sampleRate);
+
+    const auto lowBand = lowPass * lowPass * (double) lowGain;
+    const auto midBand = highPassLow * highPassLow * lowPassHigh * lowPassHigh * (double) midGain;
+    const auto highBand = highPassHigh * highPassHigh * (double) highGain;
+    const auto magnitude = std::abs(lowBand + midBand + highBand);
 
     return juce::Decibels::gainToDecibels((float) magnitude, -48.0f);
 }
