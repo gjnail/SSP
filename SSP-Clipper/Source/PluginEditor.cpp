@@ -1,55 +1,62 @@
 #include "PluginEditor.h"
+#include "../../SSP-Reverb/Source/ReverbVectorUI.h"
 
 namespace
 {
-constexpr int editorWidth = 920;
-constexpr int editorHeight = 640;
+constexpr int editorWidth = 1240;
+constexpr int editorHeight = 760;
 } // namespace
 
 PluginEditor::PluginEditor(PluginProcessor& p)
     : AudioProcessorEditor(&p),
-      processor(p),
-      controls(p, p.apvts)
+      controls(p, p.apvts),
+      presetBrowser(p)
 {
+    setOpaque(true);
     setSize(editorWidth, editorHeight);
+    setWantsKeyboardFocus(true);
 
     titleLabel.setText("SSP Clipper", juce::dontSendNotification);
-    titleLabel.setFont(juce::Font(30.0f, juce::Font::bold));
+    titleLabel.setFont(reverbui::titleFont(28.0f));
     titleLabel.setJustificationType(juce::Justification::centredLeft);
-    titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    titleLabel.setColour(juce::Label::textColourId, reverbui::textStrong());
+    titleLabel.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(titleLabel);
 
-    hintLabel.setText("4x oversampled peak shaving with just enough shape control to move from invisible cleanup to obvious bite.",
+    hintLabel.setText("Large waveform clip view, minimal control row, and SSP Reverb theming tuned toward a ClipperX-style workflow.",
                       juce::dontSendNotification);
-    hintLabel.setFont(12.5f);
+    hintLabel.setFont(reverbui::bodyFont(10.8f));
     hintLabel.setJustificationType(juce::Justification::centredLeft);
-    hintLabel.setColour(juce::Label::textColourId, juce::Colour(0xffa6b1bc));
+    hintLabel.setColour(juce::Label::textColourId, reverbui::textMuted());
+    hintLabel.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(hintLabel);
 
+    previousPresetButton.onClick = [this, &p] { p.stepPreset(-1); };
+    presetButton.onClick = [this]
+    {
+        if (presetBrowser.isOpen())
+            presetBrowser.close();
+        else
+            presetBrowser.open();
+    };
+    nextPresetButton.onClick = [this, &p] { p.stepPreset(1); };
+
+    addAndMakeVisible(previousPresetButton);
+    addAndMakeVisible(presetButton);
+    addAndMakeVisible(nextPresetButton);
     addAndMakeVisible(controls);
+    addChildComponent(presetBrowser);
+    startTimerHz(10);
 }
 
 void PluginEditor::paint(juce::Graphics& g)
 {
-    juce::ColourGradient bg(juce::Colour(0xff181214), 0.0f, 0.0f, juce::Colour(0xff0e1014), 0.0f, (float) getHeight(), false);
-    bg.addColour(0.46, juce::Colour(0xff19161b));
-    g.setGradientFill(bg);
-    g.fillAll();
+    if (backgroundCache.isNull()
+        || backgroundCache.getWidth() != getWidth()
+        || backgroundCache.getHeight() != getHeight())
+        refreshBackgroundCache();
 
-    auto upperGlow = getLocalBounds().toFloat().reduced(34.0f, 90.0f);
-    juce::ColourGradient topGlow(juce::Colour(0x28ff9a3d), upperGlow.getX(), upperGlow.getY(),
-                                 juce::Colour(0x00ff9a3d), upperGlow.getCentreX(), upperGlow.getBottom(), false);
-    g.setGradientFill(topGlow);
-    g.fillEllipse(upperGlow.removeFromTop(upperGlow.getHeight() * 0.66f));
-
-    auto lowerGlow = getLocalBounds().toFloat().reduced(60.0f, 180.0f);
-    juce::ColourGradient redGlow(juce::Colour(0x1fff5e3a), lowerGlow.getCentreX(), lowerGlow.getBottom(),
-                                 juce::Colour(0x00ff5e3a), lowerGlow.getCentreX(), lowerGlow.getY(), false);
-    g.setGradientFill(redGlow);
-    g.fillEllipse(lowerGlow.translated(0.0f, 56.0f));
-
-    g.setColour(juce::Colour(0xff302d34));
-    g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 10.0f, 1.0f);
+    g.drawImageAt(backgroundCache, 0, 0);
 }
 
 void PluginEditor::resized()
@@ -57,9 +64,73 @@ void PluginEditor::resized()
     auto area = getLocalBounds().reduced(22, 18);
 
     auto header = area.removeFromTop(66);
-    titleLabel.setBounds(header.removeFromTop(34));
+    auto titleRow = header.removeFromTop(30);
+    titleLabel.setBounds(titleRow.removeFromLeft(220));
+    titleRow.removeFromLeft(12);
+    previousPresetButton.setBounds(titleRow.removeFromLeft(34));
+    titleRow.removeFromLeft(6);
+    presetButton.setBounds(titleRow.removeFromLeft(240));
+    titleRow.removeFromLeft(6);
+    nextPresetButton.setBounds(titleRow.removeFromLeft(34));
     hintLabel.setBounds(header);
 
     area.removeFromTop(12);
     controls.setBounds(area);
+    const int browserWidth = juce::jmin(560, getWidth() - 48);
+    const int browserX = juce::jlimit(24, getWidth() - browserWidth - 24,
+                                      presetButton.getX() + presetButton.getWidth() / 2 - browserWidth / 2);
+    presetBrowser.setBounds(browserX, presetButton.getBottom() + 10, browserWidth, 320);
+    presetBrowser.setAnchorBounds(presetButton.getBounds());
+
+    refreshBackgroundCache();
+}
+
+bool PluginEditor::keyPressed(const juce::KeyPress& key)
+{
+    if (presetBrowser.isOpen() && presetBrowser.keyPressed(key))
+        return true;
+
+    if (key == juce::KeyPress::leftKey)
+    {
+        if (auto* processor = dynamic_cast<PluginProcessor*>(getAudioProcessor()))
+            processor->stepPreset(-1);
+        return true;
+    }
+
+    if (key == juce::KeyPress::rightKey)
+    {
+        if (auto* processor = dynamic_cast<PluginProcessor*>(getAudioProcessor()))
+            processor->stepPreset(1);
+        return true;
+    }
+
+    return juce::AudioProcessorEditor::keyPressed(key);
+}
+
+void PluginEditor::refreshBackgroundCache()
+{
+    if (getWidth() <= 0 || getHeight() <= 0)
+    {
+        backgroundCache = {};
+        return;
+    }
+
+    backgroundCache = juce::Image(juce::Image::ARGB, getWidth(), getHeight(), true);
+    juce::Graphics g(backgroundCache);
+    reverbui::drawEditorBackdrop(g, getLocalBounds().toFloat().reduced(2.0f));
+}
+
+void PluginEditor::timerCallback()
+{
+    if (auto* processor = dynamic_cast<PluginProcessor*>(getAudioProcessor()))
+    {
+        auto name = processor->getCurrentPresetName();
+        if (name.isEmpty())
+            name = "Default Setting";
+        if (processor->isCurrentPresetDirty())
+            name << " *";
+
+        if (presetButton.getButtonText() != name)
+            presetButton.setButtonText(name);
+    }
 }

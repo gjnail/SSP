@@ -43,4 +43,4 @@ Behavior:
 - Builds the `VST3` and `Standalone` Release targets
 - Creates a `.pkg` installer with `pkgbuild`/`productbuild` if those tools are available
 - Falls back to a distributable `.zip` package if installer tools are unavailable
-- Uses the clipper project's fixed 4x oversampled build artefacts and naming
+- Uses the clipper project's current build artefacts and naming

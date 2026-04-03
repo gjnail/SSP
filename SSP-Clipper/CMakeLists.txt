@@ -26,8 +26,10 @@ juce_generate_juce_header(SSPClipper)
 
 target_sources(SSPClipper
     PRIVATE
+        ../SSP-Reverb/Source/ReverbVectorUI.cpp
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
+        Source/ClipperPresetBrowserComponent.cpp
         Source/ClipperControlsComponent.cpp
 )
 

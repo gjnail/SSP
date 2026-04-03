@@ -1,19 +1,16 @@
 #include "ClipperControlsComponent.h"
+#include <limits>
 
 namespace
 {
-juce::Colour panelOutline() { return juce::Colour(0xff3a3137); }
-juce::Colour subtleText() { return juce::Colour(0xffb0bac4); }
-juce::Colour emberBright() { return juce::Colour(0xffffc057); }
-juce::Colour emberRed() { return juce::Colour(0xffff5b3a); }
+using Formatter = std::function<juce::String(double)>;
 
 juce::String formatSignedDb(double value)
 {
     if (std::abs(value) < 0.05)
         return "0.0 dB";
 
-    const juce::String magnitude(std::abs(value), 1);
-    return (value > 0.0 ? "+" : "-") + magnitude + " dB";
+    return (value > 0.0 ? "+" : "-") + juce::String(std::abs(value), 1) + " dB";
 }
 
 juce::String formatPlainDb(double value)
@@ -27,265 +24,366 @@ juce::String formatPercent(double value)
 }
 } // namespace
 
-class ClipperKnobLookAndFeel final : public juce::LookAndFeel_V4
+class ClipperControlsComponent::ParameterKnob final : public juce::Component
 {
 public:
-    explicit ClipperKnobLookAndFeel(bool heroStyle)
-        : hero(heroStyle)
+    ParameterKnob(juce::AudioProcessorValueTreeState& state,
+                  const juce::String& parameterID,
+                  const juce::String& labelText,
+                  juce::Colour accentColour,
+                  Formatter formatterToUse)
+        : attachment(state, parameterID, slider),
+          accent(accentColour)
     {
-    }
-
-    void drawRotarySlider(juce::Graphics& g,
-                          int x,
-                          int y,
-                          int width,
-                          int height,
-                          float sliderPosProportional,
-                          float rotaryStartAngle,
-                          float rotaryEndAngle,
-                          juce::Slider&) override
-    {
-        const auto bounds = juce::Rectangle<float>((float) x, (float) y, (float) width, (float) height).reduced(hero ? 8.0f : 10.0f);
-        const auto centre = bounds.getCentre();
-        const auto radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.5f;
-        const auto angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
-        const float stroke = hero ? juce::jmax(13.0f, radius * 0.14f) : juce::jmax(8.0f, radius * 0.11f);
-
-        g.setColour(juce::Colours::black.withAlpha(hero ? 0.30f : 0.20f));
-        g.fillEllipse(bounds.translated(0.0f, hero ? 10.0f : 7.0f));
-
-        juce::ColourGradient glow(emberRed().withAlpha(hero ? 0.26f : 0.18f), centre.x, bounds.getBottom(),
-                                  emberBright().withAlpha(hero ? 0.14f : 0.10f), centre.x, bounds.getY(), false);
-        g.setGradientFill(glow);
-        g.fillEllipse(bounds.expanded(hero ? 10.0f : 6.0f));
-
-        juce::ColourGradient shell(juce::Colour(0xff2c262c), centre.x, bounds.getY(), juce::Colour(0xff121318), centre.x, bounds.getBottom(), false);
-        shell.addColour(0.35, juce::Colour(0xff1d1a21));
-        g.setGradientFill(shell);
-        g.fillEllipse(bounds);
-
-        juce::Path baseArc;
-        const auto arcBounds = bounds.reduced(radius * 0.08f);
-        baseArc.addCentredArc(centre.x, centre.y, arcBounds.getWidth() * 0.5f, arcBounds.getHeight() * 0.5f, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour(juce::Colour(0xff0d0f13));
-        g.strokePath(baseArc, juce::PathStrokeType(stroke, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-        juce::Path valueArc;
-        valueArc.addCentredArc(centre.x, centre.y, arcBounds.getWidth() * 0.5f, arcBounds.getHeight() * 0.5f, 0.0f, rotaryStartAngle, angle, true);
-        juce::ColourGradient accent(emberRed(), arcBounds.getBottomLeft(), emberBright(), arcBounds.getTopRight(), false);
-        g.setGradientFill(accent);
-        g.strokePath(valueArc, juce::PathStrokeType(stroke, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-        auto cap = bounds.reduced(radius * (hero ? 0.30f : 0.33f));
-        juce::ColourGradient capFill(juce::Colour(0xff171920), cap.getCentreX(), cap.getY(), juce::Colour(0xff212733), cap.getCentreX(), cap.getBottom(), false);
-        g.setGradientFill(capFill);
-        g.fillEllipse(cap);
-
-        juce::Path pointer;
-        const float pointerLength = radius * (hero ? 0.55f : 0.48f);
-        const float pointerThickness = hero ? 7.5f : 5.5f;
-        pointer.addRoundedRectangle(-pointerThickness * 0.5f, -pointerLength, pointerThickness, pointerLength, pointerThickness * 0.5f);
-        g.setColour(emberBright());
-        g.fillPath(pointer, juce::AffineTransform::rotation(angle).translated(centre.x, centre.y));
-
-        g.setColour(juce::Colour(0xff101318));
-        g.fillEllipse(juce::Rectangle<float>(radius * 0.28f, radius * 0.28f).withCentre(centre));
-    }
-
-private:
-    bool hero = false;
-};
-
-class ClipperControlsComponent::ClipperKnob final : public juce::Component
-{
-public:
-    using Formatter = std::function<juce::String(double)>;
-
-    ClipperKnob(juce::AudioProcessorValueTreeState& state,
-                const juce::String& paramId,
-                const juce::String& heading,
-                const juce::String& caption,
-                Formatter formatterToUse,
-                bool heroStyle)
-        : lookAndFeel(heroStyle),
-          attachment(state, paramId, slider),
-          formatter(std::move(formatterToUse)),
-          hero(heroStyle)
-    {
+        setOpaque(true);
         addAndMakeVisible(titleLabel);
-        addAndMakeVisible(valueLabel);
-        addAndMakeVisible(captionLabel);
         addAndMakeVisible(slider);
 
-        titleLabel.setText(heading, juce::dontSendNotification);
+        titleLabel.setText(labelText, juce::dontSendNotification);
         titleLabel.setJustificationType(juce::Justification::centred);
-        titleLabel.setFont(juce::Font(hero ? 28.0f : 18.0f, juce::Font::bold));
-        titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+        titleLabel.setColour(juce::Label::textColourId, reverbui::textMuted());
+        titleLabel.setFont(reverbui::smallCapsFont(12.0f));
 
-        valueLabel.setJustificationType(juce::Justification::centred);
-        valueLabel.setFont(juce::Font(hero ? 22.0f : 15.0f, juce::Font::bold));
-        valueLabel.setColour(juce::Label::textColourId, emberBright());
+        slider.setColour(juce::Slider::rotarySliderFillColourId, accent);
+        slider.setColour(juce::Slider::thumbColourId, accent.brighter(0.15f));
+        slider.textFromValueFunction = [formatterToUse](double value)
+        {
+            return formatterToUse != nullptr ? formatterToUse(value) : juce::String(value, 2);
+        };
+        slider.valueFromTextFunction = [this](const juce::String& text)
+        {
+            const auto sanitized = text.retainCharacters("0123456789+-.");
+            const auto parsed = sanitized.isNotEmpty() ? sanitized.getDoubleValue() : slider.getValue();
+            return juce::jlimit(slider.getMinimum(), slider.getMaximum(), parsed);
+        };
 
-        captionLabel.setText(caption, juce::dontSendNotification);
-        captionLabel.setJustificationType(juce::Justification::centred);
-        captionLabel.setFont(juce::Font(11.5f));
-        captionLabel.setColour(juce::Label::textColourId, subtleText());
-
-        slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-        slider.setLookAndFeel(&lookAndFeel);
-        slider.onValueChange = [this] { refreshValueText(); };
-
-        refreshValueText();
-    }
-
-    ~ClipperKnob() override
-    {
-        slider.setLookAndFeel(nullptr);
+        if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*>(state.getParameter(parameterID)))
+            slider.setDoubleClickReturnValue(true, parameter->convertFrom0to1(parameter->getDefaultValue()));
     }
 
     void paint(juce::Graphics& g) override
     {
-        auto area = getLocalBounds().toFloat();
-        juce::ColourGradient fill(hero ? juce::Colour(0xff1a171d) : juce::Colour(0xff17161c),
-                                  area.getTopLeft(), juce::Colour(0xff101117), area.getBottomRight(), false);
-        fill.addColour(0.46, juce::Colour(0xff1c1b23));
-        g.setGradientFill(fill);
-        g.fillRoundedRectangle(area, hero ? 24.0f : 20.0f);
-
-        auto accent = area.reduced(hero ? 24.0f : 18.0f, hero ? 16.0f : 14.0f).removeFromTop(5.0f);
-        juce::ColourGradient accentFill(emberRed().withAlpha(0.60f), accent.getX(), accent.getCentreY(), emberBright().withAlpha(0.90f), accent.getRight(), accent.getCentreY(), false);
-        g.setGradientFill(accentFill);
-        g.fillRoundedRectangle(accent.withTrimmedLeft(accent.getWidth() * 0.20f).withTrimmedRight(accent.getWidth() * 0.20f), 3.0f);
-
-        g.setColour(panelOutline());
-        g.drawRoundedRectangle(area.reduced(0.5f), hero ? 24.0f : 20.0f, 1.0f);
+        reverbui::drawPanelBackground(g, getLocalBounds().toFloat(), accent, 18.0f);
     }
 
     void resized() override
     {
-        auto area = getLocalBounds().reduced(hero ? 20 : 16, hero ? 18 : 14);
-        titleLabel.setBounds(area.removeFromTop(hero ? 34 : 24));
-        valueLabel.setBounds(area.removeFromTop(hero ? 28 : 22));
-        captionLabel.setBounds(area.removeFromBottom(24));
-        area.removeFromBottom(hero ? 8 : 6);
-
-        const auto knobSize = juce::jmin(area.getWidth(), area.getHeight());
-        slider.setBounds(area.withSizeKeepingCentre(knobSize, knobSize));
+        auto area = getLocalBounds().reduced(14, 12);
+        titleLabel.setBounds(area.removeFromTop(20));
+        area.removeFromTop(4);
+        slider.setBounds(area);
     }
 
 private:
-    void refreshValueText()
-    {
-        valueLabel.setText(formatter != nullptr ? formatter(slider.getValue()) : juce::String(slider.getValue(), 2), juce::dontSendNotification);
-    }
-
-    ClipperKnobLookAndFeel lookAndFeel;
     juce::Label titleLabel;
-    juce::Label valueLabel;
-    juce::Label captionLabel;
-    juce::Slider slider;
+    reverbui::SSPKnob slider;
     juce::AudioProcessorValueTreeState::SliderAttachment attachment;
-    Formatter formatter;
-    bool hero = false;
+    juce::Colour accent;
 };
 
-class ClipperControlsComponent::MeterColumn final : public juce::Component
+class ClipperControlsComponent::ClipVisualizer final : public juce::Component
 {
 public:
-    MeterColumn(juce::String titleToUse, juce::Colour fillToUse, bool percentMode)
-        : title(std::move(titleToUse)),
-          fillColour(fillToUse),
-          showPercent(percentMode)
+    ClipVisualizer(PluginProcessor& processorToUse, juce::AudioProcessorValueTreeState& state)
+        : processor(processorToUse),
+          apvts(state)
     {
+        setOpaque(true);
     }
 
-    void setLevel(float newLevel)
+    void resized() override
     {
-        level = juce::jlimit(0.0f, 1.2f, newLevel);
-        repaint();
+        cachedBackground = {};
     }
 
     void paint(juce::Graphics& g) override
     {
-        auto area = getLocalBounds().toFloat();
-        juce::ColourGradient background(juce::Colour(0xff18171d), area.getX(), area.getY(), juce::Colour(0xff111218), area.getRight(), area.getBottom(), false);
-        g.setGradientFill(background);
-        g.fillRoundedRectangle(area, 18.0f);
+        const auto snapshot = processor.getVisualizerSnapshot();
+        const float ceilingDb = apvts.getRawParameterValue("ceilingDb")->load();
+        const float trimDb = apvts.getRawParameterValue("trimDb")->load();
+        refreshBackgroundCacheIfNeeded(ceilingDb, trimDb);
+        g.drawImageAt(cachedBackground, 0, 0);
 
-        auto meterBody = area.reduced(18.0f, 46.0f);
-        g.setColour(juce::Colour(0xff0d0e13));
-        g.fillRoundedRectangle(meterBody, 12.0f);
+        auto area = getLocalBounds().toFloat().reduced(18.0f, 16.0f);
+        auto topRow = area.removeFromTop(24.0f);
 
-        const auto clamped = juce::jlimit(0.0f, 1.0f, level);
-        auto fillBounds = meterBody.withTrimmedTop(meterBody.getHeight() * (1.0f - clamped));
-        juce::ColourGradient fill(fillColour.withAlpha(0.88f), fillBounds.getCentreX(), fillBounds.getBottom(), emberBright().withAlpha(0.95f), fillBounds.getCentreX(), fillBounds.getY(), false);
-        g.setGradientFill(fill);
-        g.fillRoundedRectangle(fillBounds, 12.0f);
+        g.setColour(reverbui::textMuted());
+        g.setFont(reverbui::bodyFont(11.0f));
+        const juce::String headerText = processor.getActiveClipTypeLabel().toUpperCase() + "  |  " + processor.getActiveOversamplingLabel() + "  |  LATENCY "
+                                        + juce::String(processor.getLatencySamples()) + " SAMPLES";
+        g.drawText(headerText, topRow.toNearestInt(), juce::Justification::centredRight, false);
 
-        g.setColour(panelOutline());
-        g.drawRoundedRectangle(area.reduced(0.5f), 18.0f, 1.0f);
-
-        g.setColour(subtleText());
-        g.setFont(juce::Font(11.0f, juce::Font::bold));
-        g.drawFittedText(title, getLocalBounds().removeFromTop(24), juce::Justification::centred, 1);
-
-        juce::String valueText;
-        if (showPercent)
-            valueText = juce::String(juce::roundToInt(clamped * 100.0f)) + "%";
-        else
-            valueText = juce::String(juce::Decibels::gainToDecibels(juce::jmax(clamped, 0.00001f), -60.0f), 1) + " dB";
-
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::Font(13.0f, juce::Font::bold));
-        g.drawFittedText(valueText, getLocalBounds().removeFromBottom(28), juce::Justification::centred, 1);
+        area.removeFromTop(8.0f);
+        drawWaveformPlot(g, area, snapshot);
     }
 
 private:
-    juce::String title;
-    juce::Colour fillColour;
-    float level = 0.0f;
-    bool showPercent = false;
+    void refreshBackgroundCacheIfNeeded(float ceilingDb, float trimDb)
+    {
+        const bool boundsChanged = cachedBackground.isNull()
+            || cachedBackground.getWidth() != getWidth()
+            || cachedBackground.getHeight() != getHeight();
+        const bool parameterChanged = std::abs(cachedCeilingDb - ceilingDb) > 0.01f
+            || std::abs(cachedTrimDb - trimDb) > 0.01f;
+
+        if (! boundsChanged && ! parameterChanged)
+            return;
+
+        if (getWidth() <= 0 || getHeight() <= 0)
+        {
+            cachedBackground = {};
+            return;
+        }
+
+        cachedBackground = juce::Image(juce::Image::ARGB, getWidth(), getHeight(), true);
+        juce::Graphics g(cachedBackground);
+        reverbui::drawPanelBackground(g, getLocalBounds().toFloat(), reverbui::brandGold(), 18.0f);
+
+        auto area = getLocalBounds().toFloat().reduced(18.0f, 16.0f);
+        auto topRow = area.removeFromTop(24.0f);
+        g.setColour(reverbui::textStrong());
+        g.setFont(reverbui::smallCapsFont(12.0f));
+        g.drawText("WAVEFORM VIEW", topRow.removeFromLeft(140.0f).toNearestInt(), juce::Justification::centredLeft, false);
+
+        area.removeFromTop(8.0f);
+        drawStaticPlotBackground(g, area, ceilingDb, trimDb);
+
+        cachedCeilingDb = ceilingDb;
+        cachedTrimDb = trimDb;
+    }
+
+    void drawStaticPlotBackground(juce::Graphics& g, juce::Rectangle<float> bounds, float ceilingDb, float trimDb) const
+    {
+        auto plot = bounds.reduced(6.0f, 4.0f);
+        g.setColour(juce::Colour(0xff0a1016));
+        g.fillRoundedRectangle(plot, 14.0f);
+
+        const float ceiling = juce::jmax(0.001f, juce::Decibels::decibelsToGain(ceilingDb));
+        const float trim = juce::Decibels::decibelsToGain(trimDb) * ceiling;
+        const float centreY = plot.getCentreY();
+        const float waveformHalfHeight = (plot.getHeight() - 54.0f) * 0.5f;
+        const auto mapY = [centreY, waveformHalfHeight](float value)
+        {
+            const float amplitude = juce::jlimit(-1.2f, 1.2f, value) / 1.2f;
+            return centreY - amplitude * waveformHalfHeight;
+        };
+
+        g.setColour(reverbui::graphGrid());
+        for (int i = 0; i < 5; ++i)
+        {
+            const float norm = juce::jmap((float) i, 0.0f, 4.0f, -1.0f, 1.0f);
+            g.drawHorizontalLine((int) std::round(mapY(norm)), plot.getX() + 10.0f, plot.getRight() - 10.0f);
+        }
+
+        g.setColour(reverbui::outlineSoft().withAlpha(0.55f));
+        g.drawVerticalLine((int) std::round(plot.getCentreX()), plot.getY() + 12.0f, plot.getBottom() - 20.0f);
+        g.drawHorizontalLine((int) std::round(centreY), plot.getX() + 10.0f, plot.getRight() - 10.0f);
+
+        const float ceilingY = mapY(ceiling);
+        const float negCeilingY = mapY(-ceiling);
+        const float trimY = mapY(trim);
+        const float negTrimY = mapY(-trim);
+        auto clipTopZone = juce::Rectangle<float>(plot.getX() + 10.0f, plot.getY() + 8.0f, plot.getWidth() - 20.0f, juce::jmax(0.0f, ceilingY - (plot.getY() + 8.0f)));
+        auto clipBottomZone = juce::Rectangle<float>(plot.getX() + 10.0f, negCeilingY, plot.getWidth() - 20.0f, juce::jmax(0.0f, (plot.getBottom() - 24.0f) - negCeilingY));
+        g.setColour(juce::Colour(0x18ff7d7d));
+        g.fillRoundedRectangle(clipTopZone, 8.0f);
+        g.fillRoundedRectangle(clipBottomZone, 8.0f);
+
+        g.setColour(reverbui::brandGold().withAlpha(0.42f));
+        g.drawHorizontalLine((int) std::round(ceilingY), plot.getX() + 10.0f, plot.getRight() - 10.0f);
+        g.drawHorizontalLine((int) std::round(negCeilingY), plot.getX() + 10.0f, plot.getRight() - 10.0f);
+        g.setColour(reverbui::brandMint().withAlpha(0.32f));
+        g.drawHorizontalLine((int) std::round(trimY), plot.getX() + 10.0f, plot.getRight() - 10.0f);
+        g.drawHorizontalLine((int) std::round(negTrimY), plot.getX() + 10.0f, plot.getRight() - 10.0f);
+    }
+
+    void drawWaveformPlot(juce::Graphics& g, juce::Rectangle<float> bounds, const PluginProcessor::VisualizerSnapshot& snapshot) const
+    {
+        auto plot = bounds.reduced(6.0f, 4.0f);
+
+        const float ceiling = juce::jmax(0.001f, juce::Decibels::decibelsToGain(apvts.getRawParameterValue("ceilingDb")->load()));
+        const float centreY = plot.getCentreY();
+        const float waveformHalfHeight = (plot.getHeight() - 54.0f) * 0.5f;
+        const auto mapY = [centreY, waveformHalfHeight](float value)
+        {
+            const float amplitude = juce::jlimit(-1.2f, 1.2f, value) / 1.2f;
+            return centreY - amplitude * waveformHalfHeight;
+        };
+        const auto mapRadius = [waveformHalfHeight](float value)
+        {
+            if (value <= 0.0025f)
+                return 0.0f;
+
+            const float clamped = juce::jlimit(0.0f, 1.2f, value) / 1.2f;
+            return juce::jmax(waveformHalfHeight * 0.025f, clamped * waveformHalfHeight);
+        };
+
+        const auto buildMirroredPath = [plot, centreY, mapRadius, &snapshot](const auto& values)
+        {
+            juce::Path path;
+            const auto count = values.size();
+
+            for (size_t i = 0; i < count; ++i)
+            {
+                const size_t historyIndex = (size_t) ((snapshot.writePosition + (int) i) % (int) count);
+                const float x = juce::jmap((float) i, 0.0f, (float) (count - 1), plot.getX(), plot.getRight());
+                const float radius = mapRadius(values[historyIndex]);
+                const float y = centreY - radius;
+
+                if (i == 0)
+                    path.startNewSubPath(x, y);
+                else
+                    path.lineTo(x, y);
+            }
+
+            for (size_t idx = count; idx-- > 0;)
+            {
+                const size_t historyIndex = (size_t) ((snapshot.writePosition + (int) idx) % (int) count);
+                const float x = juce::jmap((float) idx, 0.0f, (float) (count - 1), plot.getX(), plot.getRight());
+                path.lineTo(x, centreY + mapRadius(values[historyIndex]));
+            }
+
+            path.closeSubPath();
+            return path;
+        };
+
+        const auto buildEdgePath = [plot, centreY, mapRadius, &snapshot](const auto& values, bool topEdge)
+        {
+            juce::Path path;
+            const auto count = values.size();
+
+            for (size_t i = 0; i < count; ++i)
+            {
+                const size_t historyIndex = (size_t) ((snapshot.writePosition + (int) i) % (int) count);
+                const float x = juce::jmap((float) i, 0.0f, (float) (count - 1), plot.getX(), plot.getRight());
+                const float radius = mapRadius(values[historyIndex]);
+                const float y = topEdge ? (centreY - radius) : (centreY + radius);
+
+                if (i == 0)
+                    path.startNewSubPath(x, y);
+                else
+                    path.lineTo(x, y);
+            }
+
+            return path;
+        };
+
+        auto waveformBody = buildMirroredPath(snapshot.waveformBody);
+        auto waveformPeak = buildMirroredPath(snapshot.waveformPeak);
+        auto waveformTopEdge = buildEdgePath(snapshot.waveformPeak, true);
+        auto waveformBottomEdge = buildEdgePath(snapshot.waveformPeak, false);
+
+        const float ceilingY = mapY(ceiling);
+        const float negCeilingY = mapY(-ceiling);
+        auto topClipZone = juce::Rectangle<int>((int) std::floor(plot.getX()), (int) std::floor(plot.getY()),
+                                                (int) std::ceil(plot.getWidth()), (int) std::ceil(ceilingY - plot.getY()));
+        auto middleZone = juce::Rectangle<int>((int) std::floor(plot.getX()), (int) std::floor(ceilingY),
+                                               (int) std::ceil(plot.getWidth()), (int) std::ceil(negCeilingY - ceilingY));
+        auto bottomClipZone = juce::Rectangle<int>((int) std::floor(plot.getX()), (int) std::floor(negCeilingY),
+                                                   (int) std::ceil(plot.getWidth()), (int) std::ceil(plot.getBottom() - negCeilingY));
+
+        {
+            juce::Graphics::ScopedSaveState state(g);
+            g.reduceClipRegion(middleZone);
+            juce::ColourGradient bodyGradient(juce::Colour(0xffecebea).withAlpha(0.92f), plot.getCentreX(), plot.getY(),
+                                              juce::Colour(0xffb9b9b9).withAlpha(0.78f), plot.getCentreX(), plot.getBottom(), false);
+            g.setGradientFill(bodyGradient);
+            g.fillPath(waveformBody);
+            g.setColour(juce::Colour(0xffffffff).withAlpha(0.38f));
+            g.fillPath(waveformPeak);
+            g.setColour(juce::Colour(0xfff3f3f3).withAlpha(0.92f));
+            g.strokePath(waveformTopEdge, juce::PathStrokeType(1.3f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.strokePath(waveformBottomEdge, juce::PathStrokeType(1.3f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+
+        const auto drawClippedRegion = [&](juce::Rectangle<int> clipRegion)
+        {
+            if (clipRegion.getWidth() <= 0 || clipRegion.getHeight() <= 0)
+                return;
+
+            juce::Graphics::ScopedSaveState state(g);
+            g.reduceClipRegion(clipRegion);
+            juce::ColourGradient clippedGradient(juce::Colour(0xffffc446).withAlpha(0.96f), plot.getCentreX(), plot.getY(),
+                                                 juce::Colour(0xffff9f1a).withAlpha(0.86f), plot.getCentreX(), plot.getBottom(), false);
+            g.setGradientFill(clippedGradient);
+            g.fillPath(waveformBody);
+            g.setColour(juce::Colour(0xffffc446).withAlpha(0.98f));
+            g.fillPath(waveformPeak);
+            g.setColour(juce::Colour(0xffffc446));
+            g.strokePath(waveformTopEdge, juce::PathStrokeType(1.7f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.strokePath(waveformBottomEdge, juce::PathStrokeType(1.7f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        };
+
+        drawClippedRegion(topClipZone);
+        drawClippedRegion(bottomClipZone);
+
+        auto footer = juce::Rectangle<float>(plot.getX() + 10.0f, plot.getBottom() - 20.0f, plot.getWidth() - 20.0f, 16.0f);
+        g.setColour(reverbui::textMuted());
+        g.setFont(reverbui::bodyFont(10.6f));
+        g.drawText("Waveform", juce::Rectangle<int>((int) footer.getX(), (int) footer.getY(), 60, (int) footer.getHeight()), juce::Justification::centredLeft, false);
+        g.drawText("Clipped", juce::Rectangle<int>((int) footer.getX() + 62, (int) footer.getY(), 48, (int) footer.getHeight()), juce::Justification::centredLeft, false);
+        g.drawText("Ceiling", juce::Rectangle<int>((int) footer.getCentreX() - 54, (int) footer.getY(), 54, (int) footer.getHeight()), juce::Justification::centred, false);
+        g.drawText("Trim", juce::Rectangle<int>((int) footer.getCentreX() + 4, (int) footer.getY(), 36, (int) footer.getHeight()), juce::Justification::centred, false);
+        g.drawText("Clip Zone", juce::Rectangle<int>((int) footer.getRight() - 132, (int) footer.getY(), 60, (int) footer.getHeight()), juce::Justification::centredRight, false);
+        g.drawText(juce::String(juce::roundToInt(snapshot.clipAmount * 100.0f)) + "%",
+                   juce::Rectangle<int>((int) footer.getRight() - 64, (int) footer.getY(), 64, (int) footer.getHeight()),
+                   juce::Justification::centredRight,
+                   false);
+    }
+
+    PluginProcessor& processor;
+    juce::AudioProcessorValueTreeState& apvts;
+    juce::Image cachedBackground;
+    float cachedCeilingDb = std::numeric_limits<float>::max();
+    float cachedTrimDb = std::numeric_limits<float>::max();
 };
 
-ClipperControlsComponent::ClipperControlsComponent(PluginProcessor& p, juce::AudioProcessorValueTreeState& state)
-    : processor(p),
+ClipperControlsComponent::ClipperControlsComponent(PluginProcessor& processorToUse, juce::AudioProcessorValueTreeState& state)
+    : processor(processorToUse),
       apvts(state)
 {
-    summaryLabel.setText("Fast utility clipper for shaving peaks, leaning into crunch, and staying clean enough for mix-bus prep.", juce::dontSendNotification);
-    summaryLabel.setFont(juce::Font(13.0f));
-    summaryLabel.setColour(juce::Label::textColourId, subtleText());
+    badgeLabel.setText("MODERN CLIPPER SURFACE", juce::dontSendNotification);
+    badgeLabel.setJustificationType(juce::Justification::centredLeft);
+    badgeLabel.setFont(reverbui::smallCapsFont(11.5f));
+    badgeLabel.setColour(juce::Label::textColourId, reverbui::brandCyan());
+    addAndMakeVisible(badgeLabel);
+
+    summaryLabel.setText("ClipperX-style layout, large waveform feedback, and SSP Reverb theming with selectable oversampling from 1x to 128x.",
+                         juce::dontSendNotification);
     summaryLabel.setJustificationType(juce::Justification::centredLeft);
+    summaryLabel.setFont(reverbui::bodyFont(12.0f));
+    summaryLabel.setColour(juce::Label::textColourId, reverbui::textMuted());
     addAndMakeVisible(summaryLabel);
 
-    oversamplingLabel.setText("FIXED 4x OVERSAMPLING", juce::dontSendNotification);
-    oversamplingLabel.setFont(juce::Font(11.0f, juce::Font::bold));
-    oversamplingLabel.setJustificationType(juce::Justification::centred);
-    oversamplingLabel.setColour(juce::Label::textColourId, juce::Colours::black);
-    oversamplingLabel.setColour(juce::Label::backgroundColourId, emberBright());
-    oversamplingLabel.setColour(juce::Label::outlineColourId, juce::Colour(0xff3c3327));
-    addAndMakeVisible(oversamplingLabel);
+    addAndMakeVisible(engineStatusLabel);
 
-    driveKnob = std::make_unique<ClipperKnob>(state, "driveDb", "Drive", "Push harder into the clipper.", formatSignedDb, true);
-    ceilingKnob = std::make_unique<ClipperKnob>(state, "ceilingDb", "Ceiling", "Set the clip target for the wet path.", formatPlainDb, true);
-    softnessKnob = std::make_unique<ClipperKnob>(state, "softness", "Softness", "Morph from hard edges to a rounder shave.", formatPercent, false);
-    trimKnob = std::make_unique<ClipperKnob>(state, "trimDb", "Trim", "Level-match after clipping.", formatSignedDb, false);
-    mixKnob = std::make_unique<ClipperKnob>(state, "mix", "Mix", "Blend the clipped signal against dry.", formatPercent, false);
+    engineStatusLabel.setFont(reverbui::bodyFont(11.0f));
+    engineStatusLabel.setColour(juce::Label::textColourId, reverbui::textMuted());
+    engineStatusLabel.setJustificationType(juce::Justification::topLeft);
 
-    inputMeter = std::make_unique<MeterColumn>("Input", juce::Colour(0xffff9d4d), false);
-    clipMeter = std::make_unique<MeterColumn>("Clip", juce::Colour(0xffff5b3a), true);
-    outputMeter = std::make_unique<MeterColumn>("Output", juce::Colour(0xffffc057), false);
+    clipTypeBox.addItemList(PluginProcessor::getClipTypeChoices(), 1);
+    clipTypeBox.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(clipTypeBox);
+    clipTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(apvts, "clipType", clipTypeBox);
 
+    oversamplingBox.addItemList(PluginProcessor::getOversamplingChoices(), 1);
+    oversamplingBox.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(oversamplingBox);
+    oversamplingAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(apvts, "oversampling", oversamplingBox);
+
+    visualizer = std::make_unique<ClipVisualizer>(processor, apvts);
+    driveKnob = std::make_unique<ParameterKnob>(apvts, "driveDb", "Drive", reverbui::brandCyan(), formatSignedDb);
+    ceilingKnob = std::make_unique<ParameterKnob>(apvts, "ceilingDb", "Ceiling", reverbui::brandGold(), formatPlainDb);
+    trimKnob = std::make_unique<ParameterKnob>(apvts, "trimDb", "Trim", reverbui::brandMint(), formatSignedDb);
+    mixKnob = std::make_unique<ParameterKnob>(apvts, "mix", "Mix", reverbui::brandCyan(), formatPercent);
+
+    addAndMakeVisible(*visualizer);
     addAndMakeVisible(*driveKnob);
     addAndMakeVisible(*ceilingKnob);
-    addAndMakeVisible(*softnessKnob);
     addAndMakeVisible(*trimKnob);
     addAndMakeVisible(*mixKnob);
-    addAndMakeVisible(*inputMeter);
-    addAndMakeVisible(*clipMeter);
-    addAndMakeVisible(*outputMeter);
 
-    refreshMeters();
+    refreshDynamicState();
     startTimerHz(24);
 }
 
@@ -294,75 +392,60 @@ ClipperControlsComponent::~ClipperControlsComponent()
     stopTimer();
 }
 
-void ClipperControlsComponent::timerCallback()
-{
-    refreshMeters();
-}
-
-void ClipperControlsComponent::refreshMeters()
-{
-    inputMeter->setLevel(processor.getInputMeterLevel());
-    clipMeter->setLevel(processor.getClipMeterLevel());
-    outputMeter->setLevel(processor.getOutputMeterLevel());
-}
-
 void ClipperControlsComponent::paint(juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat();
-
-    juce::ColourGradient shell(juce::Colour(0xff16141b), bounds.getTopLeft(), juce::Colour(0xff101116), bounds.getBottomRight(), false);
-    shell.addColour(0.48, juce::Colour(0xff1b1820));
-    g.setGradientFill(shell);
-    g.fillRoundedRectangle(bounds, 28.0f);
-
-    auto topGlow = bounds.reduced(26.0f, 16.0f).removeFromTop(100.0f);
-    juce::ColourGradient glow(juce::Colour(0x24ff8a37), topGlow.getX(), topGlow.getY(), juce::Colour(0x00ff8a37), topGlow.getRight(), topGlow.getBottom(), false);
-    g.setGradientFill(glow);
-    g.fillRoundedRectangle(topGlow, 20.0f);
-
-    g.setColour(panelOutline());
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 28.0f, 1.0f);
+    juce::ignoreUnused(g);
 }
 
 void ClipperControlsComponent::resized()
 {
-    auto area = getLocalBounds().reduced(22, 18);
+    auto area = getLocalBounds();
 
-    auto topRow = area.removeFromTop(38);
-    auto badgeArea = topRow.removeFromRight(190);
-    summaryLabel.setBounds(topRow);
-    oversamplingLabel.setBounds(badgeArea.reduced(0, 4));
+    auto textRow = area.removeFromTop(48);
+    badgeLabel.setBounds(textRow.removeFromTop(18));
+    summaryLabel.setBounds(textRow);
+
+    area.removeFromTop(10);
+    auto topControls = area.removeFromTop(34);
+    clipTypeBox.setBounds(topControls.removeFromLeft(162));
+    topControls.removeFromLeft(12);
+    engineStatusLabel.setBounds(topControls.removeFromLeft(310));
+    topControls.removeFromLeft(12);
+    oversamplingBox.setBounds(topControls.removeFromRight(152));
+
+    area.removeFromTop(10);
+    visualizer->setBounds(area.removeFromTop(420));
 
     area.removeFromTop(14);
+    const int gap = 18;
+    const int knobWidth = (area.getWidth() - gap * 3) / 4;
+    driveKnob->setBounds(area.removeFromLeft(knobWidth));
+    area.removeFromLeft(gap);
+    ceilingKnob->setBounds(area.removeFromLeft(knobWidth));
+    area.removeFromLeft(gap);
+    trimKnob->setBounds(area.removeFromLeft(knobWidth));
+    area.removeFromLeft(gap);
+    mixKnob->setBounds(area);
+}
 
-    auto meterArea = area.removeFromRight(190);
-    auto mainArea = area;
+void ClipperControlsComponent::timerCallback()
+{
+    if (! isShowing())
+        return;
 
-    auto heroRow = mainArea.removeFromTop((int) std::round(mainArea.getHeight() * 0.60f));
-    auto driveArea = heroRow.removeFromLeft(heroRow.getWidth() / 2);
-    heroRow.removeFromLeft(12);
-    auto ceilingArea = heroRow;
-    driveKnob->setBounds(driveArea);
-    ceilingKnob->setBounds(ceilingArea);
+    refreshDynamicState();
+    visualizer->repaint();
+}
 
-    mainArea.removeFromTop(12);
-    const int smallWidth = (mainArea.getWidth() - 24) / 3;
-    auto softnessArea = mainArea.removeFromLeft(smallWidth);
-    mainArea.removeFromLeft(12);
-    auto trimArea = mainArea.removeFromLeft(smallWidth);
-    mainArea.removeFromLeft(12);
-    auto mixArea = mainArea;
-    softnessKnob->setBounds(softnessArea);
-    trimKnob->setBounds(trimArea);
-    mixKnob->setBounds(mixArea);
+void ClipperControlsComponent::refreshDynamicState()
+{
+    const juce::String newStatus = processor.getActiveClipTypeLabel()
+        + juce::String("  |  ")
+        + processor.getActiveOversamplingLabel()
+        + "  |  Latency "
+        + juce::String(processor.getLatencySamples())
+        + " samples";
 
-    const int meterWidth = (meterArea.getWidth() - 24) / 3;
-    auto inputArea = meterArea.removeFromLeft(meterWidth);
-    meterArea.removeFromLeft(12);
-    auto clipArea = meterArea.removeFromLeft(meterWidth);
-    meterArea.removeFromLeft(12);
-    auto outputArea = meterArea;
-    inputMeter->setBounds(inputArea);
-    clipMeter->setBounds(clipArea);
-    outputMeter->setBounds(outputArea);
+    if (engineStatusLabel.getText() != newStatus)
+        engineStatusLabel.setText(newStatus, juce::dontSendNotification);
 }

@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "../../SSP-Reverb/Source/ReverbVectorUI.h"
 
 class ClipperControlsComponent final : public juce::Component,
                                        private juce::Timer
@@ -14,24 +15,27 @@ public:
     void resized() override;
 
 private:
-    class ClipperKnob;
-    class MeterColumn;
+    class ParameterKnob;
+    class ClipVisualizer;
+    class MeterBridge;
 
     void timerCallback() override;
-    void refreshMeters();
+    void refreshDynamicState();
 
     PluginProcessor& processor;
     juce::AudioProcessorValueTreeState& apvts;
+    juce::Label badgeLabel;
     juce::Label summaryLabel;
-    juce::Label oversamplingLabel;
-    std::unique_ptr<ClipperKnob> driveKnob;
-    std::unique_ptr<ClipperKnob> ceilingKnob;
-    std::unique_ptr<ClipperKnob> softnessKnob;
-    std::unique_ptr<ClipperKnob> trimKnob;
-    std::unique_ptr<ClipperKnob> mixKnob;
-    std::unique_ptr<MeterColumn> inputMeter;
-    std::unique_ptr<MeterColumn> clipMeter;
-    std::unique_ptr<MeterColumn> outputMeter;
+    juce::Label engineStatusLabel;
+    reverbui::SSPDropdown clipTypeBox;
+    reverbui::SSPDropdown oversamplingBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> clipTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversamplingAttachment;
+    std::unique_ptr<ClipVisualizer> visualizer;
+    std::unique_ptr<ParameterKnob> driveKnob;
+    std::unique_ptr<ParameterKnob> ceilingKnob;
+    std::unique_ptr<ParameterKnob> trimKnob;
+    std::unique_ptr<ParameterKnob> mixKnob;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipperControlsComponent)
 };
