@@ -1,0 +1,45 @@
+#pragma once
+
+#include <JuceHeader.h>
+
+namespace midibuddyui
+{
+juce::Colour background();
+juce::Colour backgroundSoft();
+juce::Colour panelTop();
+juce::Colour panelBottom();
+juce::Colour outline();
+juce::Colour outlineSoft();
+juce::Colour textStrong();
+juce::Colour textMuted();
+juce::Colour brandTeal();
+juce::Colour brandAmber();
+juce::Colour brandIce();
+
+juce::Font titleFont(float size);
+juce::Font bodyFont(float size);
+juce::Font smallCapsFont(float size);
+
+void drawEditorBackdrop(juce::Graphics&, juce::Rectangle<float> bounds);
+void drawPanelBackground(juce::Graphics&, juce::Rectangle<float> bounds, juce::Colour accent, float radius = 12.0f);
+
+class LookAndFeel final : public juce::LookAndFeel_V4
+{
+public:
+    juce::Label* createSliderTextBox(juce::Slider&) override;
+    juce::Slider::SliderLayout getSliderLayout(juce::Slider&) override;
+    void drawRotarySlider(juce::Graphics&, int x, int y, int width, int height,
+                          float sliderPosProportional, float rotaryStartAngle, float rotaryEndAngle,
+                          juce::Slider&) override;
+    void drawButtonBackground(juce::Graphics&, juce::Button&, const juce::Colour& backgroundColour,
+                              bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
+    void drawButtonText(juce::Graphics&, juce::TextButton&, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
+    void drawComboBox(juce::Graphics&, int width, int height, bool, int buttonX, int buttonY, int buttonW, int buttonH,
+                      juce::ComboBox&) override;
+    juce::Font getComboBoxFont(juce::ComboBox&) override;
+    juce::Font getLabelFont(juce::Label&) override;
+    void positionComboBoxText(juce::ComboBox&, juce::Label&) override;
+};
+
+LookAndFeel& getVectorLookAndFeel();
+}

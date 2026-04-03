@@ -1,13 +1,13 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "PluginProcessor.h"
+#include "ReducerDSP.h"
+#include "ReducerVectorUI.h"
 
-class ReducerControlsComponent final : public juce::Component,
-                                       private juce::Timer
+class ReducerControlsComponent final : public juce::Component
 {
 public:
-    ReducerControlsComponent(PluginProcessor&, juce::AudioProcessorValueTreeState&);
+    explicit ReducerControlsComponent(juce::AudioProcessorValueTreeState&);
     ~ReducerControlsComponent() override;
 
     void paint(juce::Graphics&) override;
@@ -15,21 +15,17 @@ public:
 
 private:
     class ReducerKnob;
+    class ReducerToggle;
 
-    void timerCallback() override;
-    void refreshDescription();
-
-    PluginProcessor& processor;
-    juce::AudioProcessorValueTreeState& apvts;
-    juce::Label modeLabel;
-    juce::ComboBox modeBox;
-    juce::Label descriptionLabel;
     std::unique_ptr<ReducerKnob> mixKnob;
     std::unique_ptr<ReducerKnob> bitsKnob;
     std::unique_ptr<ReducerKnob> rateKnob;
-    std::unique_ptr<ReducerKnob> toneKnob;
+    std::unique_ptr<ReducerKnob> shapeKnob;
     std::unique_ptr<ReducerKnob> jitterKnob;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modeAttachment;
+    std::unique_ptr<ReducerKnob> filterKnob;
+    std::unique_ptr<ReducerToggle> preToggle;
+    std::unique_ptr<ReducerToggle> postToggle;
+    std::unique_ptr<ReducerToggle> dcShiftToggle;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ReducerControlsComponent)
 };

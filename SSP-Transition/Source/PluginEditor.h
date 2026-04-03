@@ -12,10 +12,10 @@ public:
     void resized() override;
 
 private:
-    PluginProcessor& processor;
     TransitionControlsComponent controls;
     juce::Label titleLabel;
     juce::Label hintLabel;
+    juce::Label subHintLabel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditor)
 };

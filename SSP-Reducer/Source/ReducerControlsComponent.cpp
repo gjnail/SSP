@@ -2,86 +2,31 @@
 
 namespace
 {
-juce::Colour panelOutline() { return juce::Colour(0xff4a3128); }
-juce::Colour subtleText() { return juce::Colour(0xffc6a89c); }
-juce::Colour accentOrange() { return juce::Colour(0xffff7a4d); }
-juce::Colour accentPeach() { return juce::Colour(0xffffbe9a); }
-juce::Colour deepPanel() { return juce::Colour(0xff16100f); }
-} // namespace
-
-class ReducerKnobLookAndFeel final : public juce::LookAndFeel_V4
+juce::String formatPercent(double value)
 {
-public:
-    explicit ReducerKnobLookAndFeel(bool heroStyle)
-        : hero(heroStyle)
-    {
-    }
+    return juce::String(value * 100.0, 1) + " %";
+}
 
-    void drawRotarySlider(juce::Graphics& g,
-                          int x,
-                          int y,
-                          int width,
-                          int height,
-                          float sliderPosProportional,
-                          float rotaryStartAngle,
-                          float rotaryEndAngle,
-                          juce::Slider&) override
-    {
-        const auto bounds = juce::Rectangle<float>((float) x, (float) y, (float) width, (float) height).reduced(hero ? 10.0f : 12.0f);
-        const auto radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.5f;
-        const auto centre = bounds.getCentre();
-        const auto angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
-        const float stroke = hero ? juce::jmax(14.0f, radius * 0.12f) : juce::jmax(9.0f, radius * 0.10f);
+juce::String formatBits(double value)
+{
+    return juce::String(reducerdsp::bitDepthFromNormalised((float) value));
+}
 
-        g.setColour(juce::Colours::black.withAlpha(hero ? 0.30f : 0.18f));
-        g.fillEllipse(bounds.translated(0.0f, hero ? 10.0f : 7.0f));
+juce::String formatRate(double value)
+{
+    const auto rateHz = reducerdsp::reducedSampleRateFromNormalised((float) value, 44100.0);
 
-        juce::ColourGradient halo(accentOrange().withAlpha(hero ? 0.30f : 0.22f), centre.x, bounds.getY(),
-                                  accentPeach().withAlpha(hero ? 0.18f : 0.10f), centre.x, bounds.getBottom(), true);
-        g.setGradientFill(halo);
-        g.fillEllipse(bounds.expanded(hero ? 10.0f : 6.0f));
+    if (rateHz >= 1000.0)
+        return juce::String(rateHz / 1000.0, 2) + " kHz";
 
-        g.setColour(juce::Colour(0xff130f0f));
-        g.fillEllipse(bounds.expanded(1.6f));
+    return juce::String(juce::roundToInt((float) rateHz)) + " Hz";
+}
 
-        juce::ColourGradient shell(juce::Colour(0xff3a2c28), centre.x, bounds.getY(),
-                                   juce::Colour(0xff171111), centre.x, bounds.getBottom(), false);
-        shell.addColour(0.3, juce::Colour(0xff2a1f1d));
-        g.setGradientFill(shell);
-        g.fillEllipse(bounds);
-
-        auto rim = bounds.reduced(radius * 0.05f);
-        juce::Path baseArc;
-        baseArc.addCentredArc(centre.x, centre.y, rim.getWidth() * 0.5f, rim.getHeight() * 0.5f, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour(juce::Colour(0xff140f0e));
-        g.strokePath(baseArc, juce::PathStrokeType(stroke, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-        juce::Path valueArc;
-        valueArc.addCentredArc(centre.x, centre.y, rim.getWidth() * 0.5f, rim.getHeight() * 0.5f, 0.0f, rotaryStartAngle, angle, true);
-        juce::ColourGradient accent(accentOrange(), rim.getBottomLeft(), accentPeach(), rim.getTopRight(), false);
-        g.setGradientFill(accent);
-        g.strokePath(valueArc, juce::PathStrokeType(stroke, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-        auto cap = bounds.reduced(radius * (hero ? 0.28f : 0.31f));
-        juce::ColourGradient capFill(juce::Colour(0xff16100f), cap.getCentreX(), cap.getY(),
-                                     juce::Colour(0xff251919), cap.getCentreX(), cap.getBottom(), false);
-        g.setGradientFill(capFill);
-        g.fillEllipse(cap);
-
-        juce::Path pointer;
-        const float pointerLength = radius * (hero ? 0.54f : 0.48f);
-        const float pointerThickness = hero ? 8.0f : 6.0f;
-        pointer.addRoundedRectangle(-pointerThickness * 0.5f, -pointerLength, pointerThickness, pointerLength, pointerThickness * 0.5f);
-        g.setColour(accentPeach());
-        g.fillPath(pointer, juce::AffineTransform::rotation(angle).translated(centre.x, centre.y));
-
-        g.setColour(juce::Colour(0xff1f1615));
-        g.fillEllipse(juce::Rectangle<float>(radius * 0.24f, radius * 0.24f).withCentre(centre));
-    }
-
-private:
-    bool hero = false;
-};
+juce::String formatFilter(double value)
+{
+    return juce::String(value * 100.0, 1) + " %";
+}
+}
 
 class ReducerControlsComponent::ReducerKnob final : public juce::Component
 {
@@ -89,195 +34,170 @@ public:
     ReducerKnob(juce::AudioProcessorValueTreeState& state,
                 const juce::String& paramId,
                 const juce::String& heading,
-                const juce::String& caption,
-                bool heroStyle)
-        : lookAndFeel(heroStyle),
-          attachment(state, paramId, slider),
-          hero(heroStyle)
+                std::function<juce::String(double)> formatterToUse,
+                std::function<double(const juce::String&)> parserToUse)
+        : attachment(state, paramId, slider),
+          formatter(std::move(formatterToUse)),
+          parser(std::move(parserToUse))
     {
+        addAndMakeVisible(slider);
         addAndMakeVisible(titleLabel);
         addAndMakeVisible(valueLabel);
-        addAndMakeVisible(captionLabel);
-        addAndMakeVisible(slider);
+
+        slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        slider.setColour(juce::Slider::rotarySliderFillColourId, reducerui::accent());
+        slider.setColour(juce::Slider::thumbColourId, reducerui::accentBright());
+        slider.textFromValueFunction = [this](double value)
+        {
+            return formatter != nullptr ? formatter(value) : juce::String(value, 2);
+        };
+        slider.valueFromTextFunction = [this](const juce::String& text)
+        {
+            return parser != nullptr ? parser(text) : text.getDoubleValue();
+        };
+        slider.onValueChange = [this] { refreshValueText(); };
 
         titleLabel.setText(heading, juce::dontSendNotification);
         titleLabel.setJustificationType(juce::Justification::centred);
-        titleLabel.setFont(juce::Font(hero ? 28.0f : 19.0f, juce::Font::bold));
-        titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+        titleLabel.setFont(reducerui::smallCapsFont(10.5f));
+        titleLabel.setColour(juce::Label::textColourId, reducerui::textStrong());
 
         valueLabel.setJustificationType(juce::Justification::centred);
-        valueLabel.setFont(juce::Font(hero ? 23.0f : 16.0f, juce::Font::bold));
-        valueLabel.setColour(juce::Label::textColourId, accentPeach());
-
-        captionLabel.setText(caption, juce::dontSendNotification);
-        captionLabel.setJustificationType(juce::Justification::centred);
-        captionLabel.setFont(juce::Font(11.0f));
-        captionLabel.setColour(juce::Label::textColourId, subtleText());
-
-        slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-        slider.setLookAndFeel(&lookAndFeel);
-        slider.onValueChange = [this] { refreshValueText(); };
+        valueLabel.setFont(reducerui::bodyFont(10.0f));
+        valueLabel.setColour(juce::Label::textColourId, reducerui::textMuted().brighter(0.22f));
 
         refreshValueText();
     }
 
-    ~ReducerKnob() override
-    {
-        slider.setLookAndFeel(nullptr);
-    }
-
-    void paint(juce::Graphics& g) override
-    {
-        auto area = getLocalBounds().toFloat();
-        juce::ColourGradient fill(hero ? juce::Colour(0xff201615) : juce::Colour(0xff1b1312),
-                                  area.getTopLeft(),
-                                  juce::Colour(0xff120d0c),
-                                  area.getBottomRight(),
-                                  false);
-        fill.addColour(0.42, juce::Colour(0xff241716));
-        g.setGradientFill(fill);
-        g.fillRoundedRectangle(area, hero ? 26.0f : 22.0f);
-
-        auto accent = area.reduced(hero ? 24.0f : 18.0f, hero ? 18.0f : 16.0f).removeFromTop(5.0f);
-        juce::ColourGradient accentFill(accentOrange().withAlpha(0.48f), accent.getX(), accent.getCentreY(),
-                                        accentPeach().withAlpha(0.92f), accent.getRight(), accent.getCentreY(), false);
-        g.setGradientFill(accentFill);
-        g.fillRoundedRectangle(accent.withTrimmedLeft(accent.getWidth() * 0.20f).withTrimmedRight(accent.getWidth() * 0.20f), 3.0f);
-
-        g.setColour(panelOutline());
-        g.drawRoundedRectangle(area.reduced(0.5f), hero ? 26.0f : 22.0f, 1.0f);
-    }
-
     void resized() override
     {
-        auto area = getLocalBounds().reduced(hero ? 22 : 16, hero ? 18 : 14);
-        titleLabel.setBounds(area.removeFromTop(hero ? 34 : 24));
-        valueLabel.setBounds(area.removeFromTop(hero ? 28 : 20));
-        captionLabel.setBounds(area.removeFromBottom(20));
-        area.removeFromBottom(hero ? 10 : 6);
-        const auto knobSize = juce::jmin(area.getWidth(), area.getHeight());
-        slider.setBounds(area.withSizeKeepingCentre(knobSize, knobSize));
+        auto area = getLocalBounds();
+        auto footer = area.removeFromBottom(31);
+        titleLabel.setBounds(footer.removeFromTop(13));
+        valueLabel.setBounds(footer);
+        slider.setBounds(area.reduced(6, 0));
     }
 
 private:
     void refreshValueText()
     {
-        valueLabel.setText(juce::String(juce::roundToInt((float) slider.getValue() * 100.0f)) + "%", juce::dontSendNotification);
+        valueLabel.setText(formatter != nullptr ? formatter(slider.getValue()) : juce::String(slider.getValue(), 2),
+                           juce::dontSendNotification);
     }
 
-    ReducerKnobLookAndFeel lookAndFeel;
+    reducerui::SSPKnob slider;
     juce::Label titleLabel;
     juce::Label valueLabel;
-    juce::Label captionLabel;
-    juce::Slider slider;
     juce::AudioProcessorValueTreeState::SliderAttachment attachment;
-    bool hero = false;
+    std::function<juce::String(double)> formatter;
+    std::function<double(const juce::String&)> parser;
 };
 
-ReducerControlsComponent::ReducerControlsComponent(PluginProcessor& p, juce::AudioProcessorValueTreeState& state)
-    : processor(p),
-      apvts(state)
+class ReducerControlsComponent::ReducerToggle final : public juce::Component
 {
-    addAndMakeVisible(modeLabel);
-    addAndMakeVisible(modeBox);
-    addAndMakeVisible(descriptionLabel);
+public:
+    ReducerToggle(juce::AudioProcessorValueTreeState& state,
+                  const juce::String& paramId,
+                  const juce::String& buttonText)
+        : toggle(buttonText),
+          attachment(state, paramId, toggle)
+    {
+        addAndMakeVisible(toggle);
+    }
 
-    modeLabel.setText("Mode", juce::dontSendNotification);
-    modeLabel.setFont(juce::Font(12.0f, juce::Font::bold));
-    modeLabel.setColour(juce::Label::textColourId, subtleText());
+    void resized() override
+    {
+        toggle.setBounds(getLocalBounds());
+    }
 
-    modeBox.addItemList(PluginProcessor::getModeNames(), 1);
-    modeBox.setColour(juce::ComboBox::backgroundColourId, deepPanel());
-    modeBox.setColour(juce::ComboBox::outlineColourId, panelOutline());
-    modeBox.setColour(juce::ComboBox::textColourId, juce::Colours::white);
-    modeBox.setColour(juce::ComboBox::arrowColourId, accentPeach());
-    modeBox.setColour(juce::ComboBox::buttonColourId, juce::Colour(0xff231716));
-    modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(apvts, "mode", modeBox);
+private:
+    reducerui::SSPToggle toggle;
+    juce::AudioProcessorValueTreeState::ButtonAttachment attachment;
+};
 
-    descriptionLabel.setFont(juce::Font(12.0f));
-    descriptionLabel.setColour(juce::Label::textColourId, subtleText());
-    descriptionLabel.setJustificationType(juce::Justification::centredLeft);
+ReducerControlsComponent::ReducerControlsComponent(juce::AudioProcessorValueTreeState& state)
+{
+    const auto parsePercent = [] (const juce::String& text) { return juce::jlimit(0.0, 1.0, text.retainCharacters("0123456789.-").getDoubleValue() / 100.0); };
+    const auto parseBits = [] (const juce::String& text)
+    {
+        const auto bits = juce::jlimit(1.0, 16.0, text.retainCharacters("0123456789.-").getDoubleValue());
+        return (bits - 1.0) / 15.0;
+    };
+    const auto parseRate = [] (const juce::String& text)
+    {
+        auto cleaned = text.trim();
+        double hz = cleaned.retainCharacters("0123456789.-").getDoubleValue();
 
-    mixKnob = std::make_unique<ReducerKnob>(state, "mix", "Mix", "Blend the crushed signal back against the original.", true);
-    bitsKnob = std::make_unique<ReducerKnob>(state, "bits", "Bits", "Lower resolution for grit, stair-steps, and fuzz.", false);
-    rateKnob = std::make_unique<ReducerKnob>(state, "rate", "Rate", "Reduce sample refresh for hold-style aliasing.", false);
-    toneKnob = std::make_unique<ReducerKnob>(state, "tone", "Tone", "Shape the top end after the crush.", false);
-    jitterKnob = std::make_unique<ReducerKnob>(state, "jitter", "Jitter", "Add instability so the reduction feels less static.", false);
+        if (cleaned.containsIgnoreCase("khz"))
+            hz *= 1000.0;
 
-    addAndMakeVisible(*mixKnob);
-    addAndMakeVisible(*bitsKnob);
+        hz = juce::jlimit(200.0, 44100.0, hz);
+        return std::log(hz / 200.0) / std::log(44100.0 / 200.0);
+    };
+
+    rateKnob = std::make_unique<ReducerKnob>(state, "rate", "RATE", formatRate, parseRate);
+    bitsKnob = std::make_unique<ReducerKnob>(state, "bits", "BITS", formatBits, parseBits);
+    jitterKnob = std::make_unique<ReducerKnob>(state, "jitter", "DITHER", formatPercent, parsePercent);
+    shapeKnob = std::make_unique<ReducerKnob>(state, "tone", "ADC Q", formatPercent, parsePercent);
+    filterKnob = std::make_unique<ReducerKnob>(state, "filter", "DAC Q", formatFilter, parsePercent);
+    mixKnob = std::make_unique<ReducerKnob>(state, "mix", "DRY/WET", formatPercent, parsePercent);
+
+    preToggle = std::make_unique<ReducerToggle>(state, "preFilter", "PRE");
+    postToggle = std::make_unique<ReducerToggle>(state, "postFilter", "POST");
+    dcShiftToggle = std::make_unique<ReducerToggle>(state, "dcShift", "DC SHIFT");
+
     addAndMakeVisible(*rateKnob);
-    addAndMakeVisible(*toneKnob);
+    addAndMakeVisible(*bitsKnob);
     addAndMakeVisible(*jitterKnob);
+    addAndMakeVisible(*shapeKnob);
+    addAndMakeVisible(*filterKnob);
+    addAndMakeVisible(*mixKnob);
 
-    refreshDescription();
-    startTimerHz(10);
+    addAndMakeVisible(*preToggle);
+    addAndMakeVisible(*postToggle);
+    addAndMakeVisible(*dcShiftToggle);
 }
 
-ReducerControlsComponent::~ReducerControlsComponent()
-{
-    stopTimer();
-}
-
-void ReducerControlsComponent::timerCallback()
-{
-    refreshDescription();
-}
-
-void ReducerControlsComponent::refreshDescription()
-{
-    descriptionLabel.setText(processor.getCurrentModeDescription(), juce::dontSendNotification);
-}
+ReducerControlsComponent::~ReducerControlsComponent() = default;
 
 void ReducerControlsComponent::paint(juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat();
+    const auto bounds = getLocalBounds().toFloat();
+    reducerui::drawPanelBackground(g, bounds, reducerui::accent(), 14.0f);
 
-    juce::ColourGradient shell(juce::Colour(0xff1b1413), bounds.getTopLeft(), juce::Colour(0xff120d0c), bounds.getBottomRight(), false);
-    shell.addColour(0.44, juce::Colour(0xff241716));
-    g.setGradientFill(shell);
-    g.fillRoundedRectangle(bounds, 28.0f);
-
-    auto topGlow = bounds.reduced(28.0f, 18.0f).removeFromTop(88.0f);
-    juce::ColourGradient glow(juce::Colour(0x00ff7a4d), topGlow.getX(), topGlow.getCentreY(),
-                              juce::Colour(0x00ff7a4d), topGlow.getRight(), topGlow.getCentreY(), false);
-    glow.addColour(0.5, juce::Colour(0x24ff7a4d));
-    g.setGradientFill(glow);
-    g.fillRoundedRectangle(topGlow, 24.0f);
-
-    g.setColour(panelOutline());
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 28.0f, 1.0f);
+    auto guide = bounds.reduced(24.0f, 16.0f);
+    guide.removeFromTop(10.0f);
+    g.setColour(reducerui::textMuted().withAlpha(0.18f));
+    g.drawHorizontalLine((int) guide.getCentreY(), guide.getX(), guide.getRight());
 }
 
 void ReducerControlsComponent::resized()
 {
-    auto area = getLocalBounds().reduced(22, 18);
+    auto area = getLocalBounds().reduced(14, 10);
+    const int gap = 10;
 
-    auto topRow = area.removeFromTop(82);
-    modeLabel.setBounds(topRow.removeFromTop(18));
-    topRow.removeFromTop(8);
-    auto comboArea = topRow.removeFromLeft(220);
-    modeBox.setBounds(comboArea.removeFromTop(38));
-    topRow.removeFromLeft(18);
-    descriptionLabel.setBounds(topRow.removeFromTop(42));
+    auto topRow = area.removeFromTop(128);
+    const int topWidth = (topRow.getWidth() - gap * 2) / 3;
+    rateKnob->setBounds(topRow.removeFromLeft(topWidth));
+    topRow.removeFromLeft(gap);
+    bitsKnob->setBounds(topRow.removeFromLeft(topWidth));
+    topRow.removeFromLeft(gap);
+    jitterKnob->setBounds(topRow);
 
-    area.removeFromTop(12);
-    auto heroArea = area.removeFromLeft(300);
-    area.removeFromLeft(16);
+    area.removeFromTop(8);
+    auto secondRow = area.removeFromTop(128);
+    const int secondWidth = (secondRow.getWidth() - gap * 2) / 3;
+    shapeKnob->setBounds(secondRow.removeFromLeft(secondWidth));
+    secondRow.removeFromLeft(gap);
+    filterKnob->setBounds(secondRow.removeFromLeft(secondWidth));
+    secondRow.removeFromLeft(gap);
+    mixKnob->setBounds(secondRow);
 
-    mixKnob->setBounds(heroArea);
-
-    auto topKnobs = area.removeFromTop(area.getHeight() / 2);
-    const int gap = 14;
-    const int topWidth = (topKnobs.getWidth() - gap) / 2;
-    bitsKnob->setBounds(topKnobs.removeFromLeft(topWidth));
-    topKnobs.removeFromLeft(gap);
-    rateKnob->setBounds(topKnobs);
-
-    area.removeFromTop(14);
-    auto bottomWidth = (area.getWidth() - gap) / 2;
-    toneKnob->setBounds(area.removeFromLeft(bottomWidth));
+    area.removeFromTop(8);
+    const int toggleWidth = (area.getWidth() - gap * 2) / 3;
+    preToggle->setBounds(area.removeFromLeft(toggleWidth));
     area.removeFromLeft(gap);
-    jitterKnob->setBounds(area);
+    postToggle->setBounds(area.removeFromLeft(toggleWidth));
+    area.removeFromLeft(gap);
+    dcShiftToggle->setBounds(area.removeFromLeft(toggleWidth));
 }

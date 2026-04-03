@@ -1,59 +1,54 @@
 #include "PluginEditor.h"
+#include "TransitionVectorUI.h"
 
 namespace
 {
-constexpr int editorWidth = 760;
-constexpr int editorHeight = 560;
+constexpr int editorWidth = 980;
+constexpr int editorHeight = 720;
 } // namespace
 
 PluginEditor::PluginEditor(PluginProcessor& p)
     : AudioProcessorEditor(&p),
-      processor(p),
       controls(p, p.apvts)
 {
     setSize(editorWidth, editorHeight);
 
     titleLabel.setText("SSP Transition", juce::dontSendNotification);
-    titleLabel.setFont(juce::Font(28.0f, juce::Font::bold));
+    titleLabel.setFont(transitionui::titleFont(29.0f));
     titleLabel.setJustificationType(juce::Justification::centredLeft);
-    titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    titleLabel.setColour(juce::Label::textColourId, transitionui::textStrong());
     addAndMakeVisible(titleLabel);
 
-    hintLabel.setText("Preset-led fades, wide washes, and one big macro move to get out of a section fast.",
+    hintLabel.setText("One-knob builds and easy wash-outs with SSP's metal-panel vector UI.",
                       juce::dontSendNotification);
-    hintLabel.setFont(12.5f);
+    hintLabel.setFont(transitionui::bodyFont(11.5f));
     hintLabel.setJustificationType(juce::Justification::centredLeft);
-    hintLabel.setColour(juce::Label::textColourId, juce::Colour(0xff92a0ae));
+    hintLabel.setColour(juce::Label::textColourId, transitionui::textMuted());
     addAndMakeVisible(hintLabel);
+
+    subHintLabel.setText("Preset the mood, automate one knob, and use the same control for a drop lift or a fast section wash.",
+                         juce::dontSendNotification);
+    subHintLabel.setFont(transitionui::bodyFont(10.5f));
+    subHintLabel.setJustificationType(juce::Justification::centredLeft);
+    subHintLabel.setColour(juce::Label::textColourId, transitionui::textMuted().withAlpha(0.88f));
+    addAndMakeVisible(subHintLabel);
 
     addAndMakeVisible(controls);
 }
 
 void PluginEditor::paint(juce::Graphics& g)
 {
-    juce::ColourGradient bg(juce::Colour(0xff15161c), 0.0f, 0.0f, juce::Colour(0xff0f1115), 0.0f, (float) getHeight(), false);
-    bg.addColour(0.48, juce::Colour(0xff181a22));
-    g.setGradientFill(bg);
-    g.fillAll();
-
-    auto glowArea = getLocalBounds().toFloat().reduced(18.0f, 80.0f);
-    juce::ColourGradient glow(juce::Colour(0x00ffb347), glowArea.getX(), glowArea.getCentreY(),
-                              juce::Colour(0x00ffb347), glowArea.getRight(), glowArea.getCentreY(), false);
-    glow.addColour(0.5, juce::Colour(0x22ffb347));
-    g.setGradientFill(glow);
-    g.fillEllipse(glowArea.expanded(24.0f, 40.0f));
-
-    g.setColour(juce::Colour(0xff2b3138));
-    g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 10.0f, 1.0f);
+    transitionui::drawEditorBackdrop(g, getLocalBounds().toFloat().reduced(1.0f));
 }
 
 void PluginEditor::resized()
 {
-    auto area = getLocalBounds().reduced(18, 16);
+    auto area = getLocalBounds().reduced(20, 18);
 
-    auto header = area.removeFromTop(62);
+    auto header = area.removeFromTop(76);
     titleLabel.setBounds(header.removeFromTop(32));
-    hintLabel.setBounds(header);
+    hintLabel.setBounds(header.removeFromTop(18));
+    subHintLabel.setBounds(header);
 
     area.removeFromTop(10);
     controls.setBounds(area);

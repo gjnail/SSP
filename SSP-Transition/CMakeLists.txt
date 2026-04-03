@@ -29,6 +29,8 @@ target_sources(SSPTransition
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
         Source/TransitionControlsComponent.cpp
+        Source/TransitionVectorUI.cpp
+        Source/TransitionVisualizerComponent.cpp
 )
 
 target_compile_definitions(SSPTransition

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "ReducerDSP.h"
 
 class PluginProcessor final : public juce::AudioProcessor
 {
@@ -34,19 +35,13 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState apvts;
-
-    static const juce::StringArray& getModeNames();
-    juce::String getCurrentModeDescription() const;
+    reducerdsp::Parameters getCurrentParameters() const;
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-    std::array<juce::dsp::StateVariableTPTFilter<float>, 2> toneFilters;
     juce::SmoothedValue<float> mixSmoothed;
-    std::array<float, 2> heldSample{{0.0f, 0.0f}};
-    std::array<int, 2> holdCounter{{0, 0}};
-    std::array<int, 2> holdSamplesTarget{{1, 1}};
-    juce::Random random;
+    reducerdsp::State reducerState;
     double currentSampleRate = 44100.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
