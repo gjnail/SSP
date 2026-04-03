@@ -120,6 +120,7 @@ Behavior:
 | `SSP-Hihat-God` | SSP Hihat God | Tempo-synced movement tool for hats and other rhythmic parts | `SSPHihatGod_VST3`, `SSPHihatGod_Standalone` | Windows + macOS |
 | `SSP-Loud` | SSP Loud | LUFS and peak metering tool | `SSPLoud_VST3`, `SSPLoud_Standalone` | Windows + macOS |
 | `SSP-Minimize` | SSP Minimize | Dynamic harshness / resonance reduction processor | `SSPMinimize_VST3`, `SSPMinimize_Standalone` | Windows only |
+| `SSP-Mixer` | SSP Mixer | Stereo channel-mixer utility with a 2x2 routing matrix, width, pan, mono, polarity, and mix control | `SSPMixer_VST3`, `SSPMixer_Standalone` | None yet |
 | `SSP-Multichain` | SSP Multiband Sidechain | Multiband sidechain ducking processor | `SSPMultichain_VST3`, `SSPMultichain_Standalone` | Windows + macOS |
 | `SSP-Reducer` | SSP Reducer | Bitcrusher and sample-rate reduction effect | `SSPReducer_VST3`, `SSPReducer_Standalone` | Windows + macOS |
 | `SSP-Reverb` | SSP Reverb | Reverb effect | `SSPReverb_VST3`, `SSPReverb_Standalone` | Windows + macOS |
