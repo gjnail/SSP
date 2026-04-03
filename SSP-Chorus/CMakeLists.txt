@@ -1,47 +1,47 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(SSP_DELAY VERSION 0.1.0 LANGUAGES CXX)
+project(SSP_CHORUS VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SSPJuce.cmake")
 
-juce_add_plugin(SSPDelay
+juce_add_plugin(SSPChorus
     COMPANY_NAME "Stupid Simple Plugins"
-    BUNDLE_ID com.ssp.delay
+    BUNDLE_ID com.ssp.chorus
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
-    EDITOR_WANTS_KEYBOARD_FOCUS TRUE
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD TRUE
     PLUGIN_MANUFACTURER_CODE Ssp1
-    PLUGIN_CODE Ssdl
+    PLUGIN_CODE Ssch
     FORMATS VST3 Standalone
-    PRODUCT_NAME "SSP Delay"
+    PRODUCT_NAME "SSP Chorus"
 )
 
-juce_generate_juce_header(SSPDelay)
+juce_generate_juce_header(SSPChorus)
 
-target_sources(SSPDelay
+target_sources(SSPChorus
     PRIVATE
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
-        Source/DelayControlsComponent.cpp
-        Source/DelayPresetBrowserComponent.cpp
-        Source/DelayPresetLibrary.cpp
-        Source/DelayVectorUI.cpp
+        Source/ChorusControlsComponent.cpp
+        Source/ChorusPresetBrowserComponent.cpp
+        Source/ChorusPresetLibrary.cpp
+        Source/ChorusVectorUI.cpp
 )
 
-target_compile_definitions(SSPDelay
+target_compile_definitions(SSPChorus
     PUBLIC
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
 )
 
-target_link_libraries(SSPDelay
+target_link_libraries(SSPChorus
     PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp

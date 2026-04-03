@@ -3,7 +3,6 @@
 #include <JuceHeader.h>
 #include <array>
 #include <atomic>
-#include <vector>
 
 class PluginProcessor final : public juce::AudioProcessor,
                               private juce::AudioProcessorValueTreeState::Listener
@@ -43,7 +42,7 @@ public:
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 4.0; }
+    double getTailLengthSeconds() const override { return 1.0; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -55,10 +54,6 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState apvts;
-
-    float getInputMeterLevel() const noexcept;
-    float getEchoMeterLevel() const noexcept;
-    float getOutputMeterLevel() const noexcept;
 
     static const juce::Array<PresetRecord>& getFactoryPresets();
     const juce::Array<PresetRecord>& getUserPresets() const noexcept { return userPresets; }
@@ -87,7 +82,7 @@ public:
     bool loadPresetByKey(const juce::String& presetKey);
 
 private:
-    static constexpr int numPresetParameters = 9;
+    static constexpr int numPresetParameters = 24;
 
     struct PresetStateSnapshot
     {
@@ -95,37 +90,63 @@ private:
         bool valid = false;
     };
 
+    using Filter = juce::dsp::StateVariableTPTFilter<float>;
+    using DelayLine = juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear>;
+
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void parameterChanged(const juce::String& parameterID, float newValue) override;
-    float readDelaySample(const std::vector<float>& buffer, float delayInSamples) const noexcept;
-    void updateMeters(float inputPeak, float echoPeak, float outputPeak) noexcept;
+
+    void updateScratchBuffers(int numChannels, int numSamples);
+    void updateFilterCutoffs(float loCutHz, float hiCutHz, float crossoverHz, float tonePercent);
+    void applyInputFilters(juce::AudioBuffer<float>& buffer);
+    void applyFocusCutFilters(juce::AudioBuffer<float>& buffer);
+    void buildBaseDelayedInput(const juce::AudioBuffer<float>& source,
+                               juce::AudioBuffer<float>& destination,
+                               float delaySamples);
+    void buildMotionLayer(const juce::AudioBuffer<float>& source,
+                          juce::AudioBuffer<float>& destination,
+                          float amount,
+                          float spreadMs,
+                          float shape,
+                          float rate,
+                          bool spinEnabled);
+    void splitIntoVoiceBands(const juce::AudioBuffer<float>& source,
+                             juce::AudioBuffer<float>& lowBand,
+                             juce::AudioBuffer<float>& highBand);
+    void processChorus(juce::AudioBuffer<float>& buffer, juce::dsp::Chorus<float>& chorus);
+    void applyDrive(juce::AudioBuffer<float>& buffer, float driveAmount);
+    void applyWidth(juce::AudioBuffer<float>& buffer, float widthScale);
+    float getValue(const juce::String& parameterID) const;
+
     void initialisePresetTracking();
     void setCurrentPresetMetadata(juce::String presetKey, juce::String presetName, juce::String category, juce::String author, bool isFactory);
     PresetStateSnapshot captureCurrentPresetSnapshot() const;
     PresetStateSnapshot makeDefaultPresetSnapshot() const;
-    void normalisePresetSnapshot(PresetStateSnapshot&) const;
     void applyPresetSnapshot(const PresetStateSnapshot&);
     void applyPresetRecord(const PresetRecord& preset, bool updateLoadedPresetReference);
     PresetRecord buildCurrentPresetRecord(juce::String presetName, juce::String category, juce::String author, bool isFactory) const;
     void refreshDirtyFlagFromCurrentState();
 
-    std::array<std::vector<float>, 2> delayBuffers;
-    std::array<float, 2> lowpassStates{{0.0f, 0.0f}};
-    std::array<float, 2> highpassStates{{0.0f, 0.0f}};
-    int delayBufferSize = 0;
-    int writePosition = 0;
-    double currentSampleRate = 44100.0;
-    double lfoPhase = 0.0;
-
-    std::array<juce::SmoothedValue<float>, 2> timeSmoothed;
-    std::array<juce::SmoothedValue<float>, 2> feedbackSmoothed;
+    std::array<Filter, 2> inputLowPassFilters;
+    std::array<Filter, 2> inputHighPassFilters;
+    std::array<Filter, 2> outputLowPassFilters;
+    std::array<Filter, 2> outputHighPassFilters;
+    std::array<Filter, 2> crossoverLowFilters;
+    std::array<Filter, 2> crossoverHighFilters;
+    std::array<DelayLine, 2> baseDelayLines;
+    std::array<DelayLine, 2> motionDelayLines;
+    juce::dsp::Chorus<float> lowVoiceChorus;
+    juce::dsp::Chorus<float> highVoiceChorus;
+    juce::dsp::Chorus<float> shineChorus;
     juce::SmoothedValue<float> mixSmoothed;
-    juce::SmoothedValue<float> colorSmoothed;
-    juce::SmoothedValue<float> driveSmoothed;
-    juce::SmoothedValue<float> flutterSmoothed;
-    std::atomic<float> inputMeter{0.0f};
-    std::atomic<float> echoMeter{0.0f};
-    std::atomic<float> outputMeter{0.0f};
+    juce::AudioBuffer<float> dryBuffer;
+    juce::AudioBuffer<float> filteredInputBuffer;
+    juce::AudioBuffer<float> wetBuffer;
+    juce::AudioBuffer<float> lowBandBuffer;
+    juce::AudioBuffer<float> highBandBuffer;
+    juce::AudioBuffer<float> motionBuffer;
+    double currentSampleRate = 44100.0;
+    float motionPhase = 0.0f;
 
     juce::Array<PresetRecord> userPresets;
     juce::Array<juce::File> userPresetFiles;

@@ -2,311 +2,415 @@
 
 namespace
 {
-juce::Colour panelOutline() { return juce::Colour(0xff293847); }
-juce::Colour subtleText() { return juce::Colour(0xffb8c4d1); }
-juce::Colour icyBlue() { return juce::Colour(0xff77d0ff); }
-juce::Colour aqua() { return juce::Colour(0xff44f0d1); }
-juce::Colour warmAccent() { return juce::Colour(0xffffc76f); }
+juce::Colour strongText() { return juce::Colour(0xfff1e8d6); }
+juce::Colour mutedText() { return juce::Colour(0xff99a7b8); }
+juce::Colour gold() { return juce::Colour(0xffffcf4d); }
+juce::Colour cyan() { return juce::Colour(0xff3ecfff); }
+juce::Colour mint() { return juce::Colour(0xff79f0cf); }
 
-juce::String formatMilliseconds(double value)
+juce::String formatMilliseconds(double value) { return juce::String(juce::roundToInt((float) value)) + " ms"; }
+juce::String formatPercent(double value) { return juce::String(juce::roundToInt((float) value * 100.0f)) + "%"; }
+juce::RangedAudioParameter* getRangedParameter(juce::AudioProcessorValueTreeState& state, const juce::String& id)
 {
-    return juce::String(juce::roundToInt((float) value)) + " ms";
+    return dynamic_cast<juce::RangedAudioParameter*>(state.getParameter(id));
 }
 
-juce::String formatPercent(double value)
+void setControlLinkedState(juce::Component& component, bool enabled)
 {
-    return juce::String(juce::roundToInt((float) value * 100.0f)) + "%";
+    component.setEnabled(enabled);
+    component.setAlpha(enabled ? 1.0f : 0.42f);
 }
 } // namespace
 
-class DelayKnobLookAndFeel final : public juce::LookAndFeel_V4
-{
-public:
-    explicit DelayKnobLookAndFeel(bool heroStyle)
-        : hero(heroStyle)
-    {
-    }
-
-    void drawRotarySlider(juce::Graphics& g,
-                          int x,
-                          int y,
-                          int width,
-                          int height,
-                          float sliderPosProportional,
-                          float rotaryStartAngle,
-                          float rotaryEndAngle,
-                          juce::Slider&) override
-    {
-        const auto bounds = juce::Rectangle<float>((float) x, (float) y, (float) width, (float) height).reduced(hero ? 8.0f : 10.0f);
-        const auto centre = bounds.getCentre();
-        const auto radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.5f;
-        const auto angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
-        const float stroke = hero ? juce::jmax(12.0f, radius * 0.13f) : juce::jmax(8.0f, radius * 0.11f);
-
-        g.setColour(juce::Colours::black.withAlpha(hero ? 0.28f : 0.18f));
-        g.fillEllipse(bounds.translated(0.0f, hero ? 9.0f : 6.0f));
-
-        juce::ColourGradient halo(icyBlue().withAlpha(hero ? 0.26f : 0.18f), centre.x, bounds.getBottom(),
-                                  aqua().withAlpha(hero ? 0.14f : 0.10f), centre.x, bounds.getY(), false);
-        g.setGradientFill(halo);
-        g.fillEllipse(bounds.expanded(hero ? 10.0f : 6.0f));
-
-        juce::ColourGradient shell(juce::Colour(0xff202d38), centre.x, bounds.getY(),
-                                   juce::Colour(0xff101217), centre.x, bounds.getBottom(), false);
-        shell.addColour(0.35, juce::Colour(0xff18212a));
-        g.setGradientFill(shell);
-        g.fillEllipse(bounds);
-
-        juce::Path baseArc;
-        const auto arcBounds = bounds.reduced(radius * 0.08f);
-        baseArc.addCentredArc(centre.x, centre.y,
-                              arcBounds.getWidth() * 0.5f,
-                              arcBounds.getHeight() * 0.5f,
-                              0.0f,
-                              rotaryStartAngle,
-                              rotaryEndAngle,
-                              true);
-        g.setColour(juce::Colour(0xff0d1116));
-        g.strokePath(baseArc, juce::PathStrokeType(stroke, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-        juce::Path valueArc;
-        valueArc.addCentredArc(centre.x, centre.y,
-                               arcBounds.getWidth() * 0.5f,
-                               arcBounds.getHeight() * 0.5f,
-                               0.0f,
-                               rotaryStartAngle,
-                               angle,
-                               true);
-        juce::ColourGradient accent(aqua(), arcBounds.getBottomLeft(), icyBlue(), arcBounds.getTopRight(), false);
-        g.setGradientFill(accent);
-        g.strokePath(valueArc, juce::PathStrokeType(stroke, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-        auto cap = bounds.reduced(radius * (hero ? 0.30f : 0.33f));
-        juce::ColourGradient capFill(juce::Colour(0xff161b22), cap.getCentreX(), cap.getY(),
-                                     juce::Colour(0xff1d2630), cap.getCentreX(), cap.getBottom(), false);
-        g.setGradientFill(capFill);
-        g.fillEllipse(cap);
-
-        juce::Path pointer;
-        const float pointerLength = radius * (hero ? 0.55f : 0.48f);
-        const float pointerThickness = hero ? 7.5f : 5.5f;
-        pointer.addRoundedRectangle(-pointerThickness * 0.5f, -pointerLength, pointerThickness, pointerLength, pointerThickness * 0.5f);
-        g.setColour(icyBlue());
-        g.fillPath(pointer, juce::AffineTransform::rotation(angle).translated(centre.x, centre.y));
-
-        g.setColour(juce::Colour(0xff101318));
-        g.fillEllipse(juce::Rectangle<float>(radius * 0.28f, radius * 0.28f).withCentre(centre));
-    }
-
-private:
-    bool hero = false;
-};
-
-class DelayControlsComponent::DelayKnob final : public juce::Component
+class DelayControlsComponent::ParameterKnob final : public juce::Component
 {
 public:
     using Formatter = std::function<juce::String(double)>;
 
-    DelayKnob(juce::AudioProcessorValueTreeState& state,
-              const juce::String& paramId,
-              const juce::String& heading,
-              const juce::String& caption,
-              Formatter formatterToUse,
-              bool heroStyle)
-        : lookAndFeel(heroStyle),
-          attachment(state, paramId, slider),
+    ParameterKnob(juce::AudioProcessorValueTreeState& state,
+                  const juce::String& parameterID,
+                  const juce::String& labelText,
+                  const juce::String& captionText,
+                  juce::Colour accentColour,
+                  Formatter formatterToUse,
+                  bool prominentStyle = false)
+        : attachment(state, parameterID, slider),
           formatter(std::move(formatterToUse)),
-          hero(heroStyle)
+          prominent(prominentStyle)
     {
-        addAndMakeVisible(titleLabel);
-        addAndMakeVisible(valueLabel);
-        addAndMakeVisible(captionLabel);
         addAndMakeVisible(slider);
-
-        titleLabel.setText(heading, juce::dontSendNotification);
-        titleLabel.setJustificationType(juce::Justification::centred);
-        titleLabel.setFont(juce::Font(hero ? 27.0f : 18.0f, juce::Font::bold));
-        titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-
-        valueLabel.setJustificationType(juce::Justification::centred);
-        valueLabel.setFont(juce::Font(hero ? 21.0f : 15.0f, juce::Font::bold));
-        valueLabel.setColour(juce::Label::textColourId, icyBlue());
-
-        captionLabel.setText(caption, juce::dontSendNotification);
-        captionLabel.setJustificationType(juce::Justification::centred);
-        captionLabel.setFont(juce::Font(11.3f));
-        captionLabel.setColour(juce::Label::textColourId, subtleText());
+        addAndMakeVisible(label);
+        addAndMakeVisible(valueLabel);
+        addAndMakeVisible(caption);
 
         slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-        slider.setLookAndFeel(&lookAndFeel);
-        slider.onValueChange = [this] { refreshValueText(); };
+        slider.setColour(juce::Slider::rotarySliderFillColourId, accentColour);
+        slider.setName(labelText);
+        slider.onValueChange = [this] { refreshValue(); };
 
-        refreshValueText();
-    }
+        if (auto* parameter = state.getParameter(parameterID))
+            if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter))
+                slider.setDoubleClickReturnValue(true, ranged->convertFrom0to1(ranged->getDefaultValue()));
 
-    ~DelayKnob() override
-    {
-        slider.setLookAndFeel(nullptr);
+        label.setText(labelText, juce::dontSendNotification);
+        label.setColour(juce::Label::textColourId, strongText());
+        label.setFont(juce::Font(prominent ? 18.0f : 15.0f, juce::Font::bold));
+        label.setJustificationType(juce::Justification::centred);
+        label.setInterceptsMouseClicks(false, false);
+
+        valueLabel.setColour(juce::Label::textColourId, accentColour.brighter(0.12f));
+        valueLabel.setFont(juce::Font(prominent ? 17.0f : 13.0f, juce::Font::bold));
+        valueLabel.setJustificationType(juce::Justification::centred);
+        valueLabel.setInterceptsMouseClicks(false, false);
+
+        caption.setText(captionText, juce::dontSendNotification);
+        caption.setColour(juce::Label::textColourId, mutedText());
+        caption.setFont(juce::Font(11.5f));
+        caption.setJustificationType(juce::Justification::centred);
+        caption.setInterceptsMouseClicks(false, false);
+
+        refreshValue();
     }
 
     void paint(juce::Graphics& g) override
     {
-        auto area = getLocalBounds().toFloat();
-        juce::ColourGradient fill(hero ? juce::Colour(0xff141c23) : juce::Colour(0xff141820),
-                                  area.getTopLeft(),
-                                  juce::Colour(0xff101116),
-                                  area.getBottomRight(),
-                                  false);
-        fill.addColour(0.46, juce::Colour(0xff18202a));
-        g.setGradientFill(fill);
-        g.fillRoundedRectangle(area, hero ? 24.0f : 20.0f);
-
-        auto accent = area.reduced(hero ? 24.0f : 18.0f, hero ? 16.0f : 14.0f).removeFromTop(5.0f);
-        juce::ColourGradient accentFill(aqua().withAlpha(0.62f), accent.getX(), accent.getCentreY(),
-                                        icyBlue().withAlpha(0.72f), accent.getRight(), accent.getCentreY(), false);
-        g.setGradientFill(accentFill);
-        g.fillRoundedRectangle(accent.withTrimmedLeft(accent.getWidth() * 0.20f).withTrimmedRight(accent.getWidth() * 0.20f), 3.0f);
-
-        g.setColour(panelOutline());
-        g.drawRoundedRectangle(area.reduced(0.5f), hero ? 24.0f : 20.0f, 1.0f);
+        ssp::ui::drawPanelBackground(g, getLocalBounds().toFloat(), prominent ? cyan() : gold(), 16.0f);
     }
 
     void resized() override
     {
-        auto area = getLocalBounds().reduced(hero ? 20 : 16, hero ? 18 : 14);
-        titleLabel.setBounds(area.removeFromTop(hero ? 34 : 24));
-        valueLabel.setBounds(area.removeFromTop(hero ? 28 : 22));
-        captionLabel.setBounds(area.removeFromBottom(24));
-        area.removeFromBottom(hero ? 8 : 6);
-
-        const auto knobSize = juce::jmin(area.getWidth(), area.getHeight());
-        slider.setBounds(area.withSizeKeepingCentre(knobSize, knobSize));
+        auto area = getLocalBounds().reduced(prominent ? 16 : 14, 14);
+        label.setBounds(area.removeFromTop(prominent ? 24 : 20));
+        valueLabel.setBounds(area.removeFromTop(prominent ? 24 : 18));
+        caption.setBounds(area.removeFromBottom(30));
+        area.removeFromBottom(6);
+        slider.setBounds(area);
     }
 
 private:
-    void refreshValueText()
+    void refreshValue()
     {
         valueLabel.setText(formatter != nullptr ? formatter(slider.getValue()) : juce::String(slider.getValue(), 2),
                            juce::dontSendNotification);
     }
 
-    DelayKnobLookAndFeel lookAndFeel;
-    juce::Label titleLabel;
+    ssp::ui::SSPKnob slider;
+    juce::Label label;
     juce::Label valueLabel;
-    juce::Label captionLabel;
-    juce::Slider slider;
+    juce::Label caption;
     juce::AudioProcessorValueTreeState::SliderAttachment attachment;
     Formatter formatter;
-    bool hero = false;
+    bool prominent = false;
+};
+
+class DelayControlsComponent::TimeControl final : public juce::Component
+{
+public:
+    TimeControl(juce::AudioProcessorValueTreeState& state,
+                const juce::String& modeID,
+                const juce::String& timeID,
+                const juce::String& labelText,
+                juce::Colour accentColour)
+        : apvts(state),
+          modeParameterID(modeID),
+          timeParameterID(timeID),
+          accent(accentColour),
+          syncToggle("SYNC")
+    {
+        addAndMakeVisible(slider);
+        addAndMakeVisible(label);
+        addAndMakeVisible(valueLabel);
+        addAndMakeVisible(caption);
+        addAndMakeVisible(syncToggle);
+
+        slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        slider.setColour(juce::Slider::rotarySliderFillColourId, accentColour);
+        slider.setName(labelText);
+        slider.onValueChange = [this]
+        {
+            if (suppressCallbacks)
+                return;
+
+            if (isSyncEnabled())
+                setParameterValue(modeParameterID, (float) juce::roundToInt(slider.getValue()));
+            else
+                setParameterValue(timeParameterID, (float) slider.getValue());
+
+            refreshFromState();
+        };
+
+        label.setText(labelText, juce::dontSendNotification);
+        label.setColour(juce::Label::textColourId, strongText());
+        label.setFont(juce::Font(18.0f, juce::Font::bold));
+        label.setJustificationType(juce::Justification::centred);
+        label.setInterceptsMouseClicks(false, false);
+
+        valueLabel.setColour(juce::Label::textColourId, accentColour.brighter(0.12f));
+        valueLabel.setFont(juce::Font(17.0f, juce::Font::bold));
+        valueLabel.setJustificationType(juce::Justification::centred);
+        valueLabel.setInterceptsMouseClicks(false, false);
+
+        caption.setColour(juce::Label::textColourId, mutedText());
+        caption.setFont(juce::Font(11.5f));
+        caption.setJustificationType(juce::Justification::centred);
+        caption.setInterceptsMouseClicks(false, false);
+
+        syncToggle.onClick = [this]
+        {
+            if (suppressCallbacks)
+                return;
+
+            const bool enableSync = syncToggle.getToggleState();
+            if (enableSync)
+            {
+                const int currentMode = juce::jmax(1, juce::roundToInt(apvts.getRawParameterValue(modeParameterID)->load()));
+                setParameterValue(modeParameterID, (float) currentMode);
+            }
+            else
+            {
+                setParameterValue(modeParameterID, 0.0f);
+            }
+
+            refreshFromState();
+        };
+
+        refreshFromState();
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        ssp::ui::drawPanelBackground(g, getLocalBounds().toFloat(), accent, 16.0f);
+    }
+
+    void resized() override
+    {
+        auto area = getLocalBounds().reduced(16, 14);
+        auto topRow = area.removeFromTop(24);
+        label.setBounds(topRow.removeFromLeft(topRow.getWidth() - 74));
+        syncToggle.setBounds(topRow.removeFromRight(70));
+        valueLabel.setBounds(area.removeFromTop(24));
+        caption.setBounds(area.removeFromBottom(30));
+        area.removeFromBottom(6);
+        slider.setBounds(area);
+    }
+
+    void refreshFromState()
+    {
+        const bool syncEnabled = isSyncEnabled();
+        const float timeMs = apvts.getRawParameterValue(timeParameterID)->load();
+        const int mode = juce::roundToInt(apvts.getRawParameterValue(modeParameterID)->load());
+
+        juce::ScopedValueSetter<bool> setter(suppressCallbacks, true);
+        syncToggle.setToggleState(syncEnabled, juce::dontSendNotification);
+
+        if (syncEnabled)
+        {
+            slider.setRange(1.0, (double) PluginProcessor::getTimeModeNames().size() - 1.0, 1.0);
+            slider.setValue((double) juce::jlimit(1, PluginProcessor::getTimeModeNames().size() - 1, mode), juce::dontSendNotification);
+            valueLabel.setText(PluginProcessor::getTimeModeNames()[juce::jlimit(1, PluginProcessor::getTimeModeNames().size() - 1, mode)],
+                               juce::dontSendNotification);
+            caption.setText("Sync on. Turn for note divisions.", juce::dontSendNotification);
+        }
+        else
+        {
+            slider.setRange(20.0, 2000.0, 1.0);
+            slider.setValue(timeMs, juce::dontSendNotification);
+            valueLabel.setText(formatMilliseconds(timeMs), juce::dontSendNotification);
+            caption.setText("Sync off. Turn for milliseconds.", juce::dontSendNotification);
+        }
+    }
+
+private:
+    bool isSyncEnabled() const
+    {
+        return juce::roundToInt(apvts.getRawParameterValue(modeParameterID)->load()) > 0;
+    }
+
+    void setParameterValue(const juce::String& parameterID, float rawValue)
+    {
+        if (auto* parameter = getRangedParameter(apvts, parameterID))
+        {
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost(parameter->convertTo0to1(rawValue));
+            parameter->endChangeGesture();
+        }
+    }
+
+    juce::AudioProcessorValueTreeState& apvts;
+    juce::String modeParameterID;
+    juce::String timeParameterID;
+    juce::Colour accent;
+    ssp::ui::SSPKnob slider;
+    juce::Label label;
+    juce::Label valueLabel;
+    juce::Label caption;
+    ssp::ui::SSPToggle syncToggle;
+    bool suppressCallbacks = false;
 };
 
 class DelayControlsComponent::MeterColumn final : public juce::Component
 {
 public:
-    MeterColumn(juce::String titleToUse, juce::Colour fillToUse)
-        : title(std::move(titleToUse)),
-          fillColour(fillToUse)
+    MeterColumn(juce::String labelText, juce::Colour accentColour)
+        : title(std::move(labelText)),
+          accent(accentColour)
     {
     }
 
     void setLevel(float newLevel)
     {
-        level = juce::jlimit(0.0f, 1.2f, newLevel);
+        level = juce::jlimit(0.0f, 1.0f, newLevel);
         repaint();
     }
 
     void paint(juce::Graphics& g) override
     {
-        auto area = getLocalBounds().toFloat();
-        juce::ColourGradient background(juce::Colour(0xff12171d), area.getX(), area.getY(),
-                                        juce::Colour(0xff101216), area.getRight(), area.getBottom(), false);
-        g.setGradientFill(background);
-        g.fillRoundedRectangle(area, 18.0f);
+        ssp::ui::drawPanelBackground(g, getLocalBounds().toFloat(), accent, 14.0f);
 
-        auto meterBody = area.reduced(18.0f, 46.0f);
-        g.setColour(juce::Colour(0xff0d1014));
-        g.fillRoundedRectangle(meterBody, 12.0f);
+        auto body = getLocalBounds().toFloat().reduced(16.0f, 18.0f);
+        auto meter = body.withTrimmedTop(18.0f).withTrimmedBottom(24.0f);
+        g.setColour(juce::Colour(0xff0d141c));
+        g.fillRoundedRectangle(meter, 10.0f);
 
-        const auto clamped = juce::jlimit(0.0f, 1.0f, level);
-        auto fillBounds = meterBody.withTrimmedTop(meterBody.getHeight() * (1.0f - clamped));
-        juce::ColourGradient fill(fillColour.withAlpha(0.88f), fillBounds.getCentreX(), fillBounds.getBottom(),
-                                  warmAccent().withAlpha(0.92f), fillBounds.getCentreX(), fillBounds.getY(), false);
-        g.setGradientFill(fill);
-        g.fillRoundedRectangle(fillBounds, 12.0f);
+        auto fill = meter.withTrimmedTop(meter.getHeight() * (1.0f - level));
+        juce::ColourGradient gradient(accent.withAlpha(0.95f), fill.getCentreX(), fill.getBottom(),
+                                      gold().withAlpha(0.90f), fill.getCentreX(), fill.getY(), false);
+        g.setGradientFill(gradient);
+        g.fillRoundedRectangle(fill, 10.0f);
 
-        g.setColour(panelOutline());
-        g.drawRoundedRectangle(area.reduced(0.5f), 18.0f, 1.0f);
+        g.setColour(mutedText());
+        g.setFont(juce::Font(12.0f, juce::Font::bold));
+        g.drawFittedText(title, body.removeFromTop(16).toNearestInt(), juce::Justification::centred, 1);
 
-        g.setColour(subtleText());
-        g.setFont(juce::Font(11.0f, juce::Font::bold));
-        g.drawFittedText(title, getLocalBounds().removeFromTop(24), juce::Justification::centred, 1);
-
-        const juce::String valueText = juce::String(juce::Decibels::gainToDecibels(juce::jmax(clamped, 0.00001f), -60.0f), 1) + " dB";
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::Font(13.0f, juce::Font::bold));
-        g.drawFittedText(valueText, getLocalBounds().removeFromBottom(28), juce::Justification::centred, 1);
+        const auto value = juce::String(juce::Decibels::gainToDecibels(juce::jmax(level, 0.00001f), -60.0f), 1) + " dB";
+        g.setColour(strongText());
+        g.setFont(juce::Font(12.0f, juce::Font::bold));
+        g.drawFittedText(value, body.removeFromBottom(18).toNearestInt(), juce::Justification::centred, 1);
     }
 
 private:
     juce::String title;
-    juce::Colour fillColour;
+    juce::Colour accent;
     float level = 0.0f;
+};
+
+class DelayControlsComponent::StereoDisplay final : public juce::Component
+{
+public:
+    explicit StereoDisplay(juce::AudioProcessorValueTreeState& state)
+        : apvts(state)
+    {
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        ssp::ui::drawPanelBackground(g, getLocalBounds().toFloat(), mint(), 16.0f);
+
+        auto area = getLocalBounds().toFloat().reduced(18.0f, 18.0f);
+        auto title = area.removeFromTop(18.0f);
+        g.setColour(strongText());
+        g.setFont(juce::Font(15.0f, juce::Font::bold));
+        g.drawText("Timing + Spread", title.toNearestInt(), juce::Justification::centredLeft, false);
+
+        auto subtitle = area.removeFromTop(16.0f);
+        g.setColour(mutedText());
+        g.setFont(juce::Font(11.0f));
+        g.drawText("Stereo width offsets taps and crossfeeds the returns.", subtitle.toNearestInt(), juce::Justification::centredLeft, false);
+
+        auto plot = area.reduced(0.0f, 8.0f);
+        g.setColour(juce::Colour(0xff0d141c));
+        g.fillRoundedRectangle(plot, 12.0f);
+
+        const float width = apvts.getRawParameterValue("width")->load();
+        const float tone = apvts.getRawParameterValue("tone")->load();
+        const float mix = apvts.getRawParameterValue("mix")->load();
+
+        const float leftX = plot.getCentreX() - plot.getWidth() * (0.08f + width * 0.18f);
+        const float rightX = plot.getCentreX() + plot.getWidth() * (0.08f + width * 0.18f);
+        const float topY = plot.getY() + plot.getHeight() * (0.24f - mix * 0.06f);
+        const float bottomY = plot.getBottom() - plot.getHeight() * (0.24f - mix * 0.06f);
+
+        g.setColour(cyan().withAlpha(0.80f));
+        g.drawLine(leftX, topY, leftX, bottomY, 2.0f);
+        g.drawLine(rightX, topY, rightX, bottomY, 2.0f);
+
+        juce::Path cross;
+        cross.startNewSubPath(leftX, plot.getCentreY());
+        cross.cubicTo(plot.getCentreX() - 20.0f, plot.getCentreY() - 28.0f * width,
+                      plot.getCentreX() + 20.0f, plot.getCentreY() + 28.0f * width,
+                      rightX, plot.getCentreY());
+        g.setColour(gold().withAlpha(0.72f));
+        g.strokePath(cross, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        auto toneBand = plot.removeFromBottom(18.0f);
+        juce::ColourGradient toneGradient(juce::Colour(0xff2d3945), toneBand.getX(), toneBand.getY(),
+                                          cyan(), toneBand.getRight(), toneBand.getY(), false);
+        toneGradient.addColour(juce::jlimit(0.0f, 1.0f, tone), gold().withAlpha(0.9f));
+        g.setGradientFill(toneGradient);
+        g.fillRoundedRectangle(toneBand, 6.0f);
+    }
+
+private:
+    juce::AudioProcessorValueTreeState& apvts;
 };
 
 DelayControlsComponent::DelayControlsComponent(PluginProcessor& p, juce::AudioProcessorValueTreeState& state)
     : processor(p),
-      apvts(state)
+      apvts(state),
+      unlinkToggle("UNLINK")
 {
-    summaryLabel.setText("Clean stereo delay with ms or note-sync timing, shaped repeats, and width control for quick utility work.",
+    summaryLabel.setText("Clean stereo delay with milliseconds or note-sync timing, quick tone shaping, and width control.",
                          juce::dontSendNotification);
+    summaryLabel.setColour(juce::Label::textColourId, mutedText());
     summaryLabel.setFont(juce::Font(13.0f));
-    summaryLabel.setColour(juce::Label::textColourId, subtleText());
-    summaryLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(summaryLabel);
 
-    badgeLabel.setText("SYNC OR MS", juce::dontSendNotification);
+    badgeLabel.setText("DUAL TIMING", juce::dontSendNotification);
+    badgeLabel.setColour(juce::Label::textColourId, juce::Colour(0xff101318));
+    badgeLabel.setColour(juce::Label::backgroundColourId, gold());
     badgeLabel.setFont(juce::Font(11.0f, juce::Font::bold));
     badgeLabel.setJustificationType(juce::Justification::centred);
-    badgeLabel.setColour(juce::Label::textColourId, juce::Colours::black);
-    badgeLabel.setColour(juce::Label::backgroundColourId, warmAccent());
-    badgeLabel.setColour(juce::Label::outlineColourId, juce::Colour(0xff504230));
     addAndMakeVisible(badgeLabel);
 
-    timeModeLabel.setText("Timing", juce::dontSendNotification);
-    timeModeLabel.setFont(juce::Font(12.0f, juce::Font::bold));
-    timeModeLabel.setColour(juce::Label::textColourId, subtleText());
-    addAndMakeVisible(timeModeLabel);
+    linkLabel.setText("Channel Link", juce::dontSendNotification);
+    linkLabel.setColour(juce::Label::textColourId, mutedText());
+    linkLabel.setFont(juce::Font(12.0f, juce::Font::bold));
+    addAndMakeVisible(linkLabel);
 
-    timeModeBox.addItemList(PluginProcessor::getTimeModeNames(), 1);
-    timeModeBox.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff10161d));
-    timeModeBox.setColour(juce::ComboBox::outlineColourId, panelOutline());
-    timeModeBox.setColour(juce::ComboBox::textColourId, juce::Colours::white);
-    timeModeBox.setColour(juce::ComboBox::arrowColourId, icyBlue());
-    timeModeBox.setColour(juce::ComboBox::buttonColourId, juce::Colour(0xff17212b));
-    addAndMakeVisible(timeModeBox);
-    timeModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(apvts, "timeMode", timeModeBox);
+    addAndMakeVisible(unlinkToggle);
+    unlinkAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(apvts, "unlinkChannels", unlinkToggle);
 
-    timeKnob = std::make_unique<DelayKnob>(state, "timeMs", "Time", "Used when timing mode is set to ms.", formatMilliseconds, true);
-    feedbackKnob = std::make_unique<DelayKnob>(state, "feedback", "Feedback", "Set how long repeats keep cycling.", formatPercent, true);
-    mixKnob = std::make_unique<DelayKnob>(state, "mix", "Mix", "Blend the delayed signal against dry.", formatPercent, false);
-    toneKnob = std::make_unique<DelayKnob>(state, "tone", "Tone", "Dark repeats on the left, brighter on the right.", formatPercent, false);
-    widthKnob = std::make_unique<DelayKnob>(state, "width", "Width", "Spread the stereo taps and crossfeed.", formatPercent, false);
+    leftTimeControl = std::make_unique<TimeControl>(state, "timeMode", "timeMs", "Time L", cyan());
+    rightTimeControl = std::make_unique<TimeControl>(state, "rightTimeMode", "rightTimeMs", "Time R", mint());
+    leftFeedbackKnob = std::make_unique<ParameterKnob>(state, "feedback", "Feedback L", "Left repeat decay.", gold(), formatPercent, true);
+    rightFeedbackKnob = std::make_unique<ParameterKnob>(state, "rightFeedback", "Feedback R", "Right repeat decay.", cyan(), formatPercent, true);
+    mixKnob = std::make_unique<ParameterKnob>(state, "mix", "Mix", "Blend wet against dry.", mint(), formatPercent, false);
+    toneKnob = std::make_unique<ParameterKnob>(state, "tone", "Tone", "Dark repeats to brighter taps.", gold(), formatPercent, false);
+    widthKnob = std::make_unique<ParameterKnob>(state, "width", "Width", "Offset and crossfeed the stereo taps.", cyan(), formatPercent, false);
+    inputMeter = std::make_unique<MeterColumn>("Input", mint());
+    delayMeter = std::make_unique<MeterColumn>("Delay", cyan());
+    outputMeter = std::make_unique<MeterColumn>("Output", gold());
+    stereoDisplay = std::make_unique<StereoDisplay>(state);
 
-    inputMeter = std::make_unique<MeterColumn>("Input", aqua());
-    delayMeter = std::make_unique<MeterColumn>("Delay", icyBlue());
-    outputMeter = std::make_unique<MeterColumn>("Output", warmAccent());
-
-    addAndMakeVisible(*timeKnob);
-    addAndMakeVisible(*feedbackKnob);
-    addAndMakeVisible(*mixKnob);
-    addAndMakeVisible(*toneKnob);
-    addAndMakeVisible(*widthKnob);
-    addAndMakeVisible(*inputMeter);
-    addAndMakeVisible(*delayMeter);
-    addAndMakeVisible(*outputMeter);
+    for (auto* component : { static_cast<juce::Component*>(leftTimeControl.get()),
+                             static_cast<juce::Component*>(rightTimeControl.get()),
+                             static_cast<juce::Component*>(leftFeedbackKnob.get()),
+                             static_cast<juce::Component*>(rightFeedbackKnob.get()),
+                             static_cast<juce::Component*>(mixKnob.get()),
+                             static_cast<juce::Component*>(toneKnob.get()),
+                             static_cast<juce::Component*>(widthKnob.get()),
+                             static_cast<juce::Component*>(inputMeter.get()),
+                             static_cast<juce::Component*>(delayMeter.get()),
+                             static_cast<juce::Component*>(outputMeter.get()),
+                             static_cast<juce::Component*>(stereoDisplay.get()) })
+    {
+        addAndMakeVisible(*component);
+    }
 
     refreshMeters();
+    updateLinkState();
     startTimerHz(24);
 }
 
@@ -318,6 +422,10 @@ DelayControlsComponent::~DelayControlsComponent()
 void DelayControlsComponent::timerCallback()
 {
     refreshMeters();
+    leftTimeControl->refreshFromState();
+    rightTimeControl->refreshFromState();
+    updateLinkState();
+    stereoDisplay->repaint();
 }
 
 void DelayControlsComponent::refreshMeters()
@@ -327,70 +435,88 @@ void DelayControlsComponent::refreshMeters()
     outputMeter->setLevel(processor.getOutputMeterLevel());
 }
 
+void DelayControlsComponent::updateLinkState()
+{
+    const bool unlinked = apvts.getRawParameterValue("unlinkChannels")->load() >= 0.5f;
+    setControlLinkedState(*rightTimeControl, unlinked);
+    setControlLinkedState(*rightFeedbackKnob, unlinked);
+}
+
 void DelayControlsComponent::paint(juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat();
+    auto area = getLocalBounds().toFloat();
+    juce::ColourGradient fill(juce::Colour(0xff111822), area.getTopLeft(),
+                              juce::Colour(0xff0b1118), area.getBottomLeft(), false);
+    fill.addColour(0.52, juce::Colour(0xff0f1620));
+    g.setGradientFill(fill);
+    g.fillRoundedRectangle(area, 18.0f);
 
-    juce::ColourGradient shell(juce::Colour(0xff11161c), bounds.getTopLeft(),
-                               juce::Colour(0xff101217), bounds.getBottomRight(),
-                               false);
-    shell.addColour(0.48, juce::Colour(0xff141c24));
-    g.setGradientFill(shell);
-    g.fillRoundedRectangle(bounds, 28.0f);
-
-    auto topGlow = bounds.reduced(26.0f, 16.0f).removeFromTop(100.0f);
-    juce::ColourGradient glow(aqua().withAlpha(0.16f), topGlow.getX(), topGlow.getY(),
-                              icyBlue().withAlpha(0.10f), topGlow.getRight(), topGlow.getBottom(), false);
-    g.setGradientFill(glow);
-    g.fillRoundedRectangle(topGlow, 20.0f);
-
-    g.setColour(panelOutline());
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 28.0f, 1.0f);
+    g.setColour(juce::Colour(0xff06090d));
+    g.drawRoundedRectangle(area.reduced(0.5f), 18.0f, 1.2f);
 }
 
 void DelayControlsComponent::resized()
 {
-    auto area = getLocalBounds().reduced(22, 18);
+    auto area = getLocalBounds().reduced(18, 18);
+    auto top = area.removeFromTop(28);
+    summaryLabel.setBounds(top.removeFromLeft(area.getWidth() - 140));
+    badgeLabel.setBounds(top.removeFromRight(128));
 
-    auto topRow = area.removeFromTop(60);
-    auto rightTop = topRow.removeFromRight(250);
-    summaryLabel.setBounds(topRow.removeFromTop(32));
+    area.removeFromTop(12);
+    auto left = area.removeFromLeft((int) std::round(area.getWidth() * 0.73f));
+    meterSectionBounds = area;
 
-    auto badgeArea = rightTop.removeFromTop(22);
-    badgeLabel.setBounds(badgeArea.removeFromRight(120));
-    auto timingArea = rightTop;
-    timeModeLabel.setBounds(timingArea.removeFromLeft(54));
-    timeModeBox.setBounds(timingArea.removeFromLeft(170));
+    heroSectionBounds = left.removeFromTop((int) std::round(left.getHeight() * 0.54f));
+    left.removeFromTop(12);
+    spreadSectionBounds = left;
 
-    area.removeFromTop(14);
+    const int centerWidth = 102;
+    auto leftHero = heroSectionBounds.removeFromLeft((heroSectionBounds.getWidth() - centerWidth - 24) / 2);
+    heroSectionBounds.removeFromLeft(12);
+    auto centerHero = heroSectionBounds.removeFromLeft(centerWidth);
+    heroSectionBounds.removeFromLeft(12);
+    auto rightHero = heroSectionBounds;
 
-    auto meterArea = area.removeFromRight(190);
-    auto mainArea = area;
+    auto leftTimeArea = leftHero.removeFromTop((leftHero.getHeight() - 12) / 2);
+    leftHero.removeFromTop(12);
+    auto leftFeedbackArea = leftHero;
+    auto rightTimeArea = rightHero.removeFromTop((rightHero.getHeight() - 12) / 2);
+    rightHero.removeFromTop(12);
+    auto rightFeedbackArea = rightHero;
 
-    auto heroRow = mainArea.removeFromTop((int) std::round(mainArea.getHeight() * 0.60f));
-    auto timeArea = heroRow.removeFromLeft(heroRow.getWidth() / 2);
-    heroRow.removeFromLeft(12);
-    auto feedbackArea = heroRow;
-    timeKnob->setBounds(timeArea);
-    feedbackKnob->setBounds(feedbackArea);
+    leftTimeControl->setBounds(leftTimeArea);
+    rightTimeControl->setBounds(rightTimeArea);
+    leftFeedbackKnob->setBounds(leftFeedbackArea);
+    rightFeedbackKnob->setBounds(rightFeedbackArea);
 
-    mainArea.removeFromTop(12);
-    const int smallWidth = (mainArea.getWidth() - 24) / 3;
-    auto mixArea = mainArea.removeFromLeft(smallWidth);
-    mainArea.removeFromLeft(12);
-    auto toneArea = mainArea.removeFromLeft(smallWidth);
-    mainArea.removeFromLeft(12);
-    auto widthArea = mainArea;
+    auto linkArea = centerHero.reduced(0, 24);
+    linkLabel.setBounds(linkArea.removeFromTop(20));
+    linkArea.removeFromTop(8);
+    unlinkToggle.setBounds(linkArea.removeFromTop(28));
+
+    auto displayArea = spreadSectionBounds.removeFromLeft((int) std::round(spreadSectionBounds.getWidth() * 0.46f));
+    spreadSectionBounds.removeFromLeft(12);
+    stereoDisplay->setBounds(displayArea);
+
+    const int smallWidth = (spreadSectionBounds.getWidth() - 24) / 3;
+    auto mixArea = spreadSectionBounds.removeFromLeft(smallWidth);
+    spreadSectionBounds.removeFromLeft(12);
+    auto toneArea = spreadSectionBounds.removeFromLeft(smallWidth);
+    spreadSectionBounds.removeFromLeft(12);
+    auto widthArea = spreadSectionBounds;
+
     mixKnob->setBounds(mixArea);
     toneKnob->setBounds(toneArea);
     widthKnob->setBounds(widthArea);
 
-    const int meterWidth = (meterArea.getWidth() - 24) / 3;
-    auto inputArea = meterArea.removeFromLeft(meterWidth);
-    meterArea.removeFromLeft(12);
-    auto delayArea = meterArea.removeFromLeft(meterWidth);
-    meterArea.removeFromLeft(12);
-    auto outputArea = meterArea;
+    auto meters = meterSectionBounds.reduced(0, 8);
+    const int meterWidth = (meters.getWidth() - 24) / 3;
+    auto inputArea = meters.removeFromLeft(meterWidth);
+    meters.removeFromLeft(12);
+    auto delayArea = meters.removeFromLeft(meterWidth);
+    meters.removeFromLeft(12);
+    auto outputArea = meters;
+
     inputMeter->setBounds(inputArea);
     delayMeter->setBounds(delayArea);
     outputMeter->setBounds(outputArea);

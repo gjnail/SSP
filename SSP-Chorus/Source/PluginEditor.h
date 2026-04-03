@@ -1,9 +1,8 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "DelayControlsComponent.h"
-#include "DelayPresetBrowserComponent.h"
-#include "DelayVectorUI.h"
+#include "ChorusControlsComponent.h"
+#include "ChorusPresetBrowserComponent.h"
 #include "PluginProcessor.h"
 
 class PluginEditor final : public juce::AudioProcessorEditor,
@@ -20,14 +19,14 @@ private:
     void timerCallback() override;
 
     PluginProcessor& processor;
-    DelayControlsComponent controls;
-    DelayPresetBrowserComponent presetBrowser;
+    ChorusControlsComponent controls;
+    ChorusPresetBrowserComponent presetBrowser;
     juce::Label titleLabel;
     juce::Label hintLabel;
-    ssp::ui::SSPButton previousPresetButton{"<"};
-    ssp::ui::SSPButton presetButton{"Default Setting"};
-    ssp::ui::SSPButton nextPresetButton{">"};
-    ssp::ui::SSPButton settingsButton{"SET"};
+    reverbui::SSPButton previousPresetButton{"<"};
+    reverbui::SSPButton presetButton{"Default Setting"};
+    reverbui::SSPButton nextPresetButton{">"};
+    reverbui::SSPButton browserButton{"BROWSE"};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditor)
 };

@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "EchoPresetLibrary.h"
 #include "PluginEditor.h"
 
 namespace
@@ -6,10 +7,159 @@ namespace
 constexpr float meterAttack = 0.34f;
 constexpr float meterRelease = 0.10f;
 constexpr float maxDelaySeconds = 2.5f;
+constexpr auto presetStateWrapperTag = "SSPECHO_STATE";
+constexpr auto presetMetaTag = "PRESET_META";
+constexpr auto presetFileExtension = ".sspechopreset";
+
+const std::array<const char*, 9> presetParameterIDs{{
+    "timeMs", "feedback", "mix", "color", "driveDb", "flutter",
+    "unlinkChannels", "rightTimeMs", "rightFeedback"
+}};
 
 float getLowpassAlpha(double sampleRate, float cutoffHz)
 {
     return 1.0f - std::exp(-juce::MathConstants<float>::twoPi * cutoffHz / (float) sampleRate);
+}
+
+juce::String sanitisePresetText(const juce::String& text)
+{
+    return text.trim().replaceCharacters(":*?\"<>|", "--------");
+}
+
+juce::String sanitisePresetCategory(const juce::String& text)
+{
+    auto category = sanitisePresetText(text).replaceCharacter('\\', '/');
+    while (category.contains("//"))
+        category = category.replace("//", "/");
+    return category.trimCharactersAtStart("/ ").trimCharactersAtEnd("/ ");
+}
+
+juce::String sanitisePresetName(const juce::String& text)
+{
+    return sanitisePresetText(text).trimCharactersAtStart(" ").trimCharactersAtEnd(" ");
+}
+
+juce::String makeSlug(const juce::String& text)
+{
+    auto slug = text.toLowerCase().trim();
+    juce::String out;
+
+    for (auto c : slug)
+    {
+        if (juce::CharacterFunctions::isLetterOrDigit(c))
+            out << c;
+        else if (c == ' ' || c == '-' || c == '_' || c == '/')
+            out << '-';
+    }
+
+    while (out.contains("--"))
+        out = out.replace("--", "-");
+
+    out = out.trimCharactersAtStart("-").trimCharactersAtEnd("-");
+    return out.isNotEmpty() ? out : "preset";
+}
+
+juce::String makePresetKey(bool isFactory, const juce::String& category, const juce::String& name)
+{
+    const auto prefix = isFactory ? "factory:" : "user:";
+    const auto categorySlug = makeSlug(category);
+    const auto nameSlug = makeSlug(name);
+    return prefix + (categorySlug.isNotEmpty() ? categorySlug + "/" : juce::String{}) + nameSlug;
+}
+
+juce::String makePresetFilenameStem(const juce::String& category, const juce::String& name)
+{
+    const auto categorySlug = makeSlug(category);
+    const auto nameSlug = makeSlug(name);
+    return categorySlug.isNotEmpty() ? categorySlug + "__" + nameSlug : nameSlug;
+}
+
+juce::RangedAudioParameter* getRangedParameter(juce::AudioProcessorValueTreeState& state, const juce::String& id)
+{
+    return dynamic_cast<juce::RangedAudioParameter*>(state.getParameter(id));
+}
+
+const juce::RangedAudioParameter* getRangedParameter(const juce::AudioProcessorValueTreeState& state, const juce::String& id)
+{
+    return dynamic_cast<const juce::RangedAudioParameter*>(state.getParameter(id));
+}
+
+PluginProcessor::PresetValue makeValue(const juce::String& id, float raw)
+{
+    PluginProcessor::PresetValue value;
+    value.id = id;
+    value.value = raw;
+    return value;
+}
+
+juce::var presetValueToVar(const PluginProcessor::PresetValue& value)
+{
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", value.id);
+    object->setProperty("value", value.value);
+    return juce::var(object);
+}
+
+bool readPresetValueFromVar(const juce::var& valueVar, PluginProcessor::PresetValue& value)
+{
+    if (auto* object = valueVar.getDynamicObject())
+    {
+        value.id = object->getProperty("id").toString();
+        value.value = (float) object->getProperty("value");
+        return value.id.isNotEmpty();
+    }
+
+    return false;
+}
+
+juce::String serialisePresetRecordToJson(const PluginProcessor::PresetRecord& preset)
+{
+    juce::Array<juce::var> values;
+    for (const auto& item : preset.values)
+        values.add(presetValueToVar(item));
+
+    auto* object = new juce::DynamicObject();
+    object->setProperty("name", preset.name);
+    object->setProperty("category", preset.category);
+    object->setProperty("author", preset.author);
+    object->setProperty("isFactory", preset.isFactory);
+    object->setProperty("version", preset.version);
+    object->setProperty("values", juce::var(values));
+    return juce::JSON::toString(juce::var(object), true);
+}
+
+bool readPresetRecordFromJson(const juce::String& json, PluginProcessor::PresetRecord& preset)
+{
+    const auto parsed = juce::JSON::parse(json);
+    auto* object = parsed.getDynamicObject();
+    if (object == nullptr)
+        return false;
+
+    preset.name = sanitisePresetName(object->getProperty("name").toString());
+    preset.category = sanitisePresetCategory(object->getProperty("category").toString());
+    preset.author = object->getProperty("author").toString();
+    preset.isFactory = (bool) object->getProperty("isFactory");
+    preset.version = object->getProperty("version").toString();
+    if (preset.version.isEmpty())
+        preset.version = "1.0";
+    if (preset.author.isEmpty())
+        preset.author = "Imported";
+    if (preset.name.isEmpty())
+        return false;
+
+    preset.values.clearQuick();
+    if (auto* array = object->getProperty("values").getArray())
+    {
+        for (const auto& entry : *array)
+        {
+            PluginProcessor::PresetValue value;
+            if (readPresetValueFromVar(entry, value))
+                preset.values.add(value);
+        }
+    }
+
+    preset.id = makePresetKey(preset.isFactory, preset.category, preset.name);
+    return true;
 }
 } // namespace
 
@@ -53,7 +203,24 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f),
         0.18f));
 
-    return {params.begin(), params.end()};
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        "unlinkChannels",
+        "Unlink Channels",
+        false));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "rightTimeMs",
+        "Right Time",
+        juce::NormalisableRange<float>(60.0f, 900.0f, 1.0f),
+        340.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "rightFeedback",
+        "Right Feedback",
+        juce::NormalisableRange<float>(0.0f, 0.92f, 0.001f),
+        0.42f));
+
+    return { params.begin(), params.end() };
 }
 
 PluginProcessor::PluginProcessor()
@@ -62,9 +229,43 @@ PluginProcessor::PluginProcessor()
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "PARAMS", createParameterLayout())
 {
+    for (const auto* id : presetParameterIDs)
+        apvts.addParameterListener(id, this);
+
+    initialisePresetTracking();
+    refreshUserPresets();
+
+    int defaultPresetIndex = 0;
+    for (int i = 0; i < getFactoryPresets().size(); ++i)
+    {
+        if (getFactoryPresets().getReference(i).name == "Default Setting")
+        {
+            defaultPresetIndex = i;
+            break;
+        }
+    }
+
+    loadFactoryPreset(defaultPresetIndex);
 }
 
-PluginProcessor::~PluginProcessor() = default;
+PluginProcessor::~PluginProcessor()
+{
+    for (const auto* id : presetParameterIDs)
+        apvts.removeParameterListener(id, this);
+}
+
+void PluginProcessor::initialisePresetTracking()
+{
+    currentPresetKey.clear();
+    currentPresetName.clear();
+    currentPresetCategory.clear();
+    currentPresetAuthor.clear();
+    currentPresetIsFactory = false;
+    currentPresetDirty.store(false);
+    lastLoadedPresetSnapshot = {};
+    previewRestoreSnapshot = {};
+    previewPresetKey.clear();
+}
 
 float PluginProcessor::getInputMeterLevel() const noexcept
 {
@@ -79,6 +280,457 @@ float PluginProcessor::getEchoMeterLevel() const noexcept
 float PluginProcessor::getOutputMeterLevel() const noexcept
 {
     return outputMeter.load();
+}
+
+const juce::Array<PluginProcessor::PresetRecord>& PluginProcessor::getFactoryPresets()
+{
+    return sspecho::presets::getFactoryPresetLibrary();
+}
+
+juce::File PluginProcessor::getUserPresetDirectory() const
+{
+    return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+        .getChildFile("SSP Echo Presets");
+}
+
+juce::String PluginProcessor::getCurrentPresetName() const noexcept
+{
+    return currentPresetName;
+}
+
+juce::String PluginProcessor::getCurrentPresetCategory() const noexcept
+{
+    return currentPresetCategory;
+}
+
+juce::String PluginProcessor::getCurrentPresetAuthor() const noexcept
+{
+    return currentPresetAuthor;
+}
+
+juce::String PluginProcessor::getCurrentPresetKey() const noexcept
+{
+    return currentPresetKey;
+}
+
+bool PluginProcessor::isCurrentPresetFactory() const noexcept
+{
+    return currentPresetIsFactory;
+}
+
+bool PluginProcessor::isCurrentPresetDirty() const noexcept
+{
+    return currentPresetDirty.load();
+}
+
+bool PluginProcessor::matchesCurrentPreset(const PresetRecord& preset) const noexcept
+{
+    return preset.id.isNotEmpty() && preset.id == currentPresetKey;
+}
+
+juce::StringArray PluginProcessor::getAvailablePresetCategories() const
+{
+    juce::StringArray categories;
+
+    for (const auto& preset : getFactoryPresets())
+        if (preset.category.isNotEmpty())
+            categories.addIfNotAlreadyThere(preset.category);
+
+    for (const auto& preset : userPresets)
+        if (preset.category.isNotEmpty())
+            categories.addIfNotAlreadyThere(preset.category);
+
+    categories.sort(true);
+    return categories;
+}
+
+void PluginProcessor::refreshUserPresets()
+{
+    userPresets.clearQuick();
+    userPresetFiles.clearQuick();
+
+    auto directory = getUserPresetDirectory();
+    if (! directory.isDirectory())
+        return;
+
+    juce::Array<juce::File> files;
+    directory.findChildFiles(files, juce::File::findFiles, false, "*" + juce::String(presetFileExtension));
+    files.sort();
+
+    for (const auto& file : files)
+    {
+        PresetRecord preset;
+        if (! readPresetRecordFromJson(file.loadFileAsString(), preset))
+            continue;
+
+        preset.isFactory = false;
+        preset.id = makePresetKey(false, preset.category, preset.name);
+        userPresets.add(preset);
+        userPresetFiles.add(file);
+    }
+}
+
+bool PluginProcessor::loadFactoryPreset(int index)
+{
+    if (! juce::isPositiveAndBelow(index, getFactoryPresets().size()))
+        return false;
+
+    applyPresetRecord(getFactoryPresets().getReference(index), true);
+    return true;
+}
+
+bool PluginProcessor::loadUserPreset(int index)
+{
+    refreshUserPresets();
+    if (! juce::isPositiveAndBelow(index, userPresets.size()))
+        return false;
+
+    applyPresetRecord(userPresets.getReference(index), true);
+    return true;
+}
+
+bool PluginProcessor::saveUserPreset(const juce::String& presetName, const juce::String& category)
+{
+    const auto cleanName = sanitisePresetName(presetName);
+    const auto cleanCategory = sanitisePresetCategory(category);
+    if (cleanName.isEmpty())
+        return false;
+
+    auto directory = getUserPresetDirectory();
+    directory.createDirectory();
+
+    auto preset = buildCurrentPresetRecord(cleanName, cleanCategory,
+                                           currentPresetAuthor.isNotEmpty() ? currentPresetAuthor : "SSP User",
+                                           false);
+    preset.id = makePresetKey(false, preset.category, preset.name);
+
+    const auto file = directory.getChildFile(makePresetFilenameStem(preset.category, preset.name) + presetFileExtension);
+    if (! file.replaceWithText(serialisePresetRecordToJson(preset)))
+        return false;
+
+    refreshUserPresets();
+    setCurrentPresetMetadata(preset.id, preset.name, preset.category, preset.author, false);
+    lastLoadedPresetSnapshot = captureCurrentPresetSnapshot();
+    currentPresetDirty.store(false);
+    return true;
+}
+
+bool PluginProcessor::deleteUserPreset(int index)
+{
+    refreshUserPresets();
+    if (! juce::isPositiveAndBelow(index, userPresetFiles.size()))
+        return false;
+
+    const auto preset = userPresets.getReference(index);
+    if (! userPresetFiles.getReference(index).deleteFile())
+        return false;
+
+    refreshUserPresets();
+    if (preset.id == currentPresetKey)
+    {
+        currentPresetKey.clear();
+        currentPresetDirty.store(true);
+        lastLoadedPresetSnapshot.valid = false;
+    }
+
+    return true;
+}
+
+bool PluginProcessor::importPresetFromFile(const juce::File& file, bool loadAfterImport)
+{
+    PresetRecord preset;
+    if (! readPresetRecordFromJson(file.loadFileAsString(), preset))
+        return false;
+
+    preset.isFactory = false;
+    preset.id = makePresetKey(false, preset.category, preset.name);
+
+    auto directory = getUserPresetDirectory();
+    directory.createDirectory();
+    const auto destination = directory.getChildFile(makePresetFilenameStem(preset.category, preset.name) + presetFileExtension);
+    if (! destination.replaceWithText(serialisePresetRecordToJson(preset)))
+        return false;
+
+    refreshUserPresets();
+
+    if (loadAfterImport)
+    {
+        for (int i = 0; i < userPresets.size(); ++i)
+            if (userPresets.getReference(i).id == preset.id)
+                return loadUserPreset(i);
+    }
+
+    return true;
+}
+
+bool PluginProcessor::exportCurrentPresetToFile(const juce::File& file) const
+{
+    const auto presetName = currentPresetName.isNotEmpty() ? currentPresetName : "Current Settings";
+    const auto preset = buildCurrentPresetRecord(presetName,
+                                                 currentPresetCategory,
+                                                 currentPresetAuthor.isNotEmpty() ? currentPresetAuthor : "SSP User",
+                                                 currentPresetIsFactory);
+    return file.replaceWithText(serialisePresetRecordToJson(preset));
+}
+
+bool PluginProcessor::resetUserPresetsToFactoryDefaults()
+{
+    refreshUserPresets();
+
+    bool removedAny = false;
+    for (const auto& file : userPresetFiles)
+        removedAny = file.deleteFile() || removedAny;
+
+    refreshUserPresets();
+    if (! currentPresetIsFactory)
+    {
+        currentPresetKey.clear();
+        currentPresetDirty.store(true);
+        lastLoadedPresetSnapshot.valid = false;
+    }
+
+    return removedAny || userPresetFiles.isEmpty();
+}
+
+void PluginProcessor::setCurrentPresetMetadata(juce::String presetKey, juce::String presetName, juce::String category, juce::String author, bool isFactory)
+{
+    currentPresetKey = std::move(presetKey);
+    currentPresetName = std::move(presetName);
+    currentPresetCategory = std::move(category);
+    currentPresetAuthor = std::move(author);
+    currentPresetIsFactory = isFactory;
+}
+
+PluginProcessor::PresetStateSnapshot PluginProcessor::captureCurrentPresetSnapshot() const
+{
+    PresetStateSnapshot snapshot;
+    snapshot.valid = true;
+
+    for (size_t i = 0; i < presetParameterIDs.size(); ++i)
+        snapshot.values[i] = apvts.getRawParameterValue(presetParameterIDs[i])->load();
+
+    normalisePresetSnapshot(snapshot);
+    return snapshot;
+}
+
+PluginProcessor::PresetStateSnapshot PluginProcessor::makeDefaultPresetSnapshot() const
+{
+    PresetStateSnapshot snapshot;
+    snapshot.valid = true;
+
+    for (size_t i = 0; i < presetParameterIDs.size(); ++i)
+        if (const auto* parameter = getRangedParameter(apvts, presetParameterIDs[i]))
+            snapshot.values[i] = parameter->convertFrom0to1(parameter->getDefaultValue());
+
+    return snapshot;
+}
+
+void PluginProcessor::normalisePresetSnapshot(PresetStateSnapshot& snapshot) const
+{
+    if (! snapshot.valid)
+        return;
+
+    const bool unlinkChannels = snapshot.values[6] >= 0.5f;
+    if (! unlinkChannels)
+    {
+        snapshot.values[7] = snapshot.values[0];
+        snapshot.values[8] = snapshot.values[1];
+    }
+}
+
+void PluginProcessor::applyPresetSnapshot(const PresetStateSnapshot& snapshot)
+{
+    if (! snapshot.valid)
+        return;
+
+    juce::ScopedValueSetter<bool> suppressor(suppressParameterListener, true);
+
+    for (size_t i = 0; i < presetParameterIDs.size(); ++i)
+    {
+        if (auto* parameter = getRangedParameter(apvts, presetParameterIDs[i]))
+        {
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost(parameter->convertTo0to1(snapshot.values[i]));
+            parameter->endChangeGesture();
+        }
+    }
+}
+
+void PluginProcessor::applyPresetRecord(const PresetRecord& preset, bool updateLoadedPresetReference)
+{
+    endPresetPreview();
+
+    auto snapshot = makeDefaultPresetSnapshot();
+    for (const auto& value : preset.values)
+    {
+        for (size_t i = 0; i < presetParameterIDs.size(); ++i)
+        {
+            if (value.id == presetParameterIDs[i])
+            {
+                snapshot.values[i] = value.value;
+                break;
+            }
+        }
+    }
+
+    normalisePresetSnapshot(snapshot);
+
+    applyPresetSnapshot(snapshot);
+
+    if (updateLoadedPresetReference)
+    {
+        setCurrentPresetMetadata(makePresetKey(preset.isFactory, preset.category, preset.name),
+                                 preset.name,
+                                 preset.category,
+                                 preset.author,
+                                 preset.isFactory);
+        lastLoadedPresetSnapshot = snapshot;
+        currentPresetDirty.store(false);
+    }
+}
+
+PluginProcessor::PresetRecord PluginProcessor::buildCurrentPresetRecord(juce::String presetName, juce::String category, juce::String author, bool isFactory) const
+{
+    PresetRecord preset;
+    preset.name = sanitisePresetName(presetName);
+    preset.category = sanitisePresetCategory(category);
+    preset.author = author.isNotEmpty() ? author : (isFactory ? "SSP Factory" : "SSP User");
+    preset.isFactory = isFactory;
+    preset.id = makePresetKey(isFactory, preset.category, preset.name);
+
+    const auto snapshot = captureCurrentPresetSnapshot();
+    for (size_t i = 0; i < presetParameterIDs.size(); ++i)
+        preset.values.add(makeValue(presetParameterIDs[i], snapshot.values[i]));
+
+    return preset;
+}
+
+void PluginProcessor::refreshDirtyFlagFromCurrentState()
+{
+    if (! lastLoadedPresetSnapshot.valid)
+        return;
+
+    const auto current = captureCurrentPresetSnapshot();
+    bool dirty = false;
+
+    for (size_t i = 0; i < current.values.size(); ++i)
+    {
+        if (std::abs(current.values[i] - lastLoadedPresetSnapshot.values[i]) > 0.0001f)
+        {
+            dirty = true;
+            break;
+        }
+    }
+
+    currentPresetDirty.store(dirty);
+}
+
+void PluginProcessor::parameterChanged(const juce::String&, float)
+{
+    if (suppressParameterListener)
+        return;
+
+    refreshDirtyFlagFromCurrentState();
+}
+
+bool PluginProcessor::beginPresetPreview(const PresetRecord& preset)
+{
+    if (preset.id.isEmpty())
+        return false;
+
+    if (previewPresetKey.isEmpty())
+        previewRestoreSnapshot = captureCurrentPresetSnapshot();
+
+    if (previewPresetKey == preset.id)
+        return true;
+
+    previewPresetKey = preset.id;
+
+    auto snapshot = makeDefaultPresetSnapshot();
+    for (const auto& value : preset.values)
+    {
+        for (size_t i = 0; i < presetParameterIDs.size(); ++i)
+        {
+            if (value.id == presetParameterIDs[i])
+            {
+                snapshot.values[i] = value.value;
+                break;
+            }
+        }
+    }
+
+    normalisePresetSnapshot(snapshot);
+
+    applyPresetSnapshot(snapshot);
+    return true;
+}
+
+void PluginProcessor::endPresetPreview()
+{
+    if (previewPresetKey.isEmpty())
+        return;
+
+    if (previewRestoreSnapshot.valid)
+        applyPresetSnapshot(previewRestoreSnapshot);
+
+    previewRestoreSnapshot = {};
+    previewPresetKey.clear();
+    refreshDirtyFlagFromCurrentState();
+}
+
+bool PluginProcessor::isPresetPreviewActive() const noexcept
+{
+    return previewPresetKey.isNotEmpty();
+}
+
+juce::Array<PluginProcessor::PresetRecord> PluginProcessor::getSequentialPresetList() const
+{
+    juce::Array<PresetRecord> ordered;
+    for (const auto& preset : getFactoryPresets())
+        ordered.add(preset);
+    for (const auto& preset : userPresets)
+        ordered.add(preset);
+    return ordered;
+}
+
+bool PluginProcessor::loadPresetByKey(const juce::String& presetKey)
+{
+    if (presetKey.isEmpty())
+        return false;
+
+    for (int i = 0; i < getFactoryPresets().size(); ++i)
+        if (getFactoryPresets().getReference(i).id == presetKey)
+            return loadFactoryPreset(i);
+
+    refreshUserPresets();
+    for (int i = 0; i < userPresets.size(); ++i)
+        if (userPresets.getReference(i).id == presetKey)
+            return loadUserPreset(i);
+
+    return false;
+}
+
+bool PluginProcessor::stepPreset(int delta)
+{
+    const auto ordered = getSequentialPresetList();
+    if (ordered.isEmpty())
+        return false;
+
+    int currentIndex = -1;
+    for (int i = 0; i < ordered.size(); ++i)
+    {
+        if (ordered.getReference(i).id == currentPresetKey)
+        {
+            currentIndex = i;
+            break;
+        }
+    }
+
+    if (currentIndex < 0)
+        currentIndex = 0;
+
+    const int nextIndex = (currentIndex + delta + ordered.size()) % ordered.size();
+    return loadPresetByKey(ordered.getReference(nextIndex).id);
 }
 
 float PluginProcessor::readDelaySample(const std::vector<float>& buffer, float delayInSamples) const noexcept
@@ -121,20 +773,30 @@ void PluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     for (auto& buffer : delayBuffers)
         buffer.assign((size_t) delayBufferSize, 0.0f);
 
-    lowpassStates = {0.0f, 0.0f};
-    highpassStates = {0.0f, 0.0f};
+    lowpassStates = { 0.0f, 0.0f };
+    highpassStates = { 0.0f, 0.0f };
     writePosition = 0;
     lfoPhase = 0.0;
 
-    timeSmoothed.reset(sampleRate, 0.04);
-    feedbackSmoothed.reset(sampleRate, 0.05);
+    for (auto& smoother : timeSmoothed)
+        smoother.reset(sampleRate, 0.04);
+    for (auto& smoother : feedbackSmoothed)
+        smoother.reset(sampleRate, 0.05);
     mixSmoothed.reset(sampleRate, 0.04);
     colorSmoothed.reset(sampleRate, 0.06);
     driveSmoothed.reset(sampleRate, 0.05);
     flutterSmoothed.reset(sampleRate, 0.07);
 
-    timeSmoothed.setCurrentAndTargetValue(apvts.getRawParameterValue("timeMs")->load());
-    feedbackSmoothed.setCurrentAndTargetValue(apvts.getRawParameterValue("feedback")->load());
+    const float leftTimeMs = apvts.getRawParameterValue("timeMs")->load();
+    const bool unlinkChannels = apvts.getRawParameterValue("unlinkChannels")->load() >= 0.5f;
+    const float rightTimeMs = unlinkChannels ? apvts.getRawParameterValue("rightTimeMs")->load() : leftTimeMs;
+    const float leftFeedback = apvts.getRawParameterValue("feedback")->load();
+    const float rightFeedback = unlinkChannels ? apvts.getRawParameterValue("rightFeedback")->load() : leftFeedback;
+
+    timeSmoothed[0].setCurrentAndTargetValue(leftTimeMs);
+    timeSmoothed[1].setCurrentAndTargetValue(rightTimeMs);
+    feedbackSmoothed[0].setCurrentAndTargetValue(leftFeedback);
+    feedbackSmoothed[1].setCurrentAndTargetValue(rightFeedback);
     mixSmoothed.setCurrentAndTargetValue(apvts.getRawParameterValue("mix")->load());
     colorSmoothed.setCurrentAndTargetValue(apvts.getRawParameterValue("color")->load());
     driveSmoothed.setCurrentAndTargetValue(apvts.getRawParameterValue("driveDb")->load());
@@ -163,8 +825,16 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     if (numChannels == 0 || numSamples == 0 || delayBufferSize <= 0)
         return;
 
-    timeSmoothed.setTargetValue(apvts.getRawParameterValue("timeMs")->load());
-    feedbackSmoothed.setTargetValue(apvts.getRawParameterValue("feedback")->load());
+    const float leftTimeMs = apvts.getRawParameterValue("timeMs")->load();
+    const bool unlinkChannels = apvts.getRawParameterValue("unlinkChannels")->load() >= 0.5f;
+    const float rightTimeMs = unlinkChannels ? apvts.getRawParameterValue("rightTimeMs")->load() : leftTimeMs;
+    const float leftFeedback = apvts.getRawParameterValue("feedback")->load();
+    const float rightFeedback = unlinkChannels ? apvts.getRawParameterValue("rightFeedback")->load() : leftFeedback;
+
+    timeSmoothed[0].setTargetValue(leftTimeMs);
+    timeSmoothed[1].setTargetValue(rightTimeMs);
+    feedbackSmoothed[0].setTargetValue(leftFeedback);
+    feedbackSmoothed[1].setTargetValue(rightFeedback);
     mixSmoothed.setTargetValue(apvts.getRawParameterValue("mix")->load());
     colorSmoothed.setTargetValue(apvts.getRawParameterValue("color")->load());
     driveSmoothed.setTargetValue(apvts.getRawParameterValue("driveDb")->load());
@@ -176,32 +846,38 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
-        const float timeMs = timeSmoothed.getNextValue();
-        const float feedback = feedbackSmoothed.getNextValue();
         const float mix = mixSmoothed.getNextValue();
         const float color = colorSmoothed.getNextValue();
         const float drive = juce::Decibels::decibelsToGain(driveSmoothed.getNextValue());
         const float flutter = flutterSmoothed.getNextValue();
 
-        const float baseDelaySamples = juce::jlimit(8.0f,
-                                                    (float) delayBufferSize - 2.0f,
-                                                    timeMs * (float) currentSampleRate * 0.001f);
+        const float leftTimeThisSample = timeSmoothed[0].getNextValue();
+        const float rightTimeThisSample = timeSmoothed[1].getNextValue();
+        const float leftFeedbackThisSample = feedbackSmoothed[0].getNextValue();
+        const float rightFeedbackThisSample = feedbackSmoothed[1].getNextValue();
+
+        const float leftBaseDelaySamples = juce::jlimit(8.0f,
+                                                        (float) delayBufferSize - 2.0f,
+                                                        leftTimeThisSample * (float) currentSampleRate * 0.001f);
+        const float rightBaseDelaySamples = juce::jlimit(8.0f,
+                                                         (float) delayBufferSize - 2.0f,
+                                                         rightTimeThisSample * (float) currentSampleRate * 0.001f);
 
         const float modulation = std::sin((float) lfoPhase) * 0.65f
                                + std::sin((float) (lfoPhase * 0.37 + 0.7)) * 0.35f;
         const float modulationDepth = 0.8f + flutter * 8.0f;
         const float leftDelay = juce::jlimit(8.0f,
                                              (float) delayBufferSize - 2.0f,
-                                             baseDelaySamples + modulation * modulationDepth);
+                                             leftBaseDelaySamples + modulation * modulationDepth);
         const float rightDelay = juce::jlimit(8.0f,
                                               (float) delayBufferSize - 2.0f,
-                                              baseDelaySamples * 1.08f - modulation * modulationDepth * 0.75f);
+                                              rightBaseDelaySamples - modulation * modulationDepth * 0.75f);
 
         const float lowpassAlpha = getLowpassAlpha(currentSampleRate, juce::jmap(color, 1000.0f, 8200.0f));
         const float highpassAlpha = getLowpassAlpha(currentSampleRate, juce::jmap(1.0f - color, 35.0f, 180.0f));
 
-        const std::array<float, 2> taps{readDelaySample(delayBuffers[0], leftDelay),
-                                        readDelaySample(delayBuffers[1], rightDelay)};
+        const std::array<float, 2> taps{ readDelaySample(delayBuffers[0], leftDelay),
+                                         readDelaySample(delayBuffers[1], rightDelay) };
 
         for (int channel = 0; channel < numChannels; ++channel)
         {
@@ -213,7 +889,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
 
             const float filteredRepeat = lowpassStates[(size_t) channel] - highpassStates[(size_t) channel];
             const float saturatedRepeat = std::tanh(filteredRepeat * drive);
-            const float writeSample = dry + saturatedRepeat * feedback;
+            const float feedbackForChannel = channel == 0 ? leftFeedbackThisSample : rightFeedbackThisSample;
+            const float writeSample = dry + saturatedRepeat * feedbackForChannel;
 
             delayBuffers[(size_t) channel][(size_t) writePosition] = writeSample;
 
@@ -238,15 +915,70 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
 
 void PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
+    juce::XmlElement wrapper(presetStateWrapperTag);
     if (auto state = apvts.copyState().createXml())
-        copyXmlToBinary(*state, destData);
+        wrapper.addChildElement(state.release());
+
+    auto* meta = wrapper.createNewChildElement(presetMetaTag);
+    meta->setAttribute("currentPresetKey", currentPresetKey);
+    meta->setAttribute("currentPresetName", currentPresetName);
+    meta->setAttribute("currentPresetCategory", currentPresetCategory);
+    meta->setAttribute("currentPresetAuthor", currentPresetAuthor);
+    meta->setAttribute("currentPresetIsFactory", currentPresetIsFactory);
+    meta->setAttribute("currentPresetDirty", currentPresetDirty.load());
+
+    copyXmlToBinary(wrapper, destData);
 }
 
 void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
-    if (auto xmlState = getXmlFromBinary(data, sizeInBytes))
-        if (xmlState->hasTagName(apvts.state.getType()))
-            apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+    auto xmlState = getXmlFromBinary(data, sizeInBytes);
+    if (xmlState == nullptr)
+        return;
+
+    const juce::XmlElement* valueTreeXml = nullptr;
+    const juce::XmlElement* metaXml = nullptr;
+
+    if (xmlState->hasTagName(presetStateWrapperTag))
+    {
+        valueTreeXml = xmlState->getChildByName(apvts.state.getType());
+        metaXml = xmlState->getChildByName(presetMetaTag);
+    }
+    else if (xmlState->hasTagName(apvts.state.getType()))
+    {
+        valueTreeXml = xmlState.get();
+    }
+
+    if (valueTreeXml != nullptr)
+        apvts.replaceState(juce::ValueTree::fromXml(*valueTreeXml));
+
+    if (metaXml != nullptr)
+    {
+        currentPresetKey = metaXml->getStringAttribute("currentPresetKey");
+        currentPresetName = metaXml->getStringAttribute("currentPresetName");
+        currentPresetCategory = metaXml->getStringAttribute("currentPresetCategory");
+        currentPresetAuthor = metaXml->getStringAttribute("currentPresetAuthor");
+        currentPresetIsFactory = metaXml->getBoolAttribute("currentPresetIsFactory", false);
+        currentPresetDirty.store(metaXml->getBoolAttribute("currentPresetDirty", false));
+
+        if (currentPresetKey.isNotEmpty() && ! currentPresetDirty.load())
+            lastLoadedPresetSnapshot = captureCurrentPresetSnapshot();
+        else
+            lastLoadedPresetSnapshot.valid = false;
+    }
+    else
+    {
+        currentPresetKey.clear();
+        currentPresetName.clear();
+        currentPresetCategory.clear();
+        currentPresetAuthor.clear();
+        currentPresetIsFactory = false;
+        currentPresetDirty.store(false);
+        lastLoadedPresetSnapshot.valid = false;
+    }
+
+    previewRestoreSnapshot = {};
+    previewPresetKey.clear();
 }
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()

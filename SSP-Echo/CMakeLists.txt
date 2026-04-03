@@ -14,7 +14,7 @@ juce_add_plugin(SSPEcho
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
-    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD TRUE
     PLUGIN_MANUFACTURER_CODE Ssp1
     PLUGIN_CODE Ssec
@@ -29,6 +29,9 @@ target_sources(SSPEcho
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
         Source/EchoControlsComponent.cpp
+        Source/EchoPresetBrowserComponent.cpp
+        Source/EchoPresetLibrary.cpp
+        Source/EchoVectorUI.cpp
 )
 
 target_compile_definitions(SSPEcho

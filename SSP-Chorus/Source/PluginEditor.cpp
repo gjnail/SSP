@@ -1,9 +1,10 @@
 #include "PluginEditor.h"
+#include "ChorusVectorUI.h"
 
 namespace
 {
-constexpr int editorWidth = 1120;
-constexpr int editorHeight = 840;
+constexpr int editorWidth = 1280;
+constexpr int editorHeight = 880;
 } // namespace
 
 PluginEditor::PluginEditor(PluginProcessor& p)
@@ -13,19 +14,19 @@ PluginEditor::PluginEditor(PluginProcessor& p)
       presetBrowser(p)
 {
     setSize(editorWidth, editorHeight);
-    setResizable(true, true);
-    setResizeLimits(980, 760, 1600, 1200);
     setWantsKeyboardFocus(true);
 
-    titleLabel.setText("SSP Delay", juce::dontSendNotification);
-    titleLabel.setFont(juce::Font(30.0f, juce::Font::bold));
-    titleLabel.setColour(juce::Label::textColourId, juce::Colour(0xfff1e8d6));
+    titleLabel.setText("SSP Chorus", juce::dontSendNotification);
+    titleLabel.setFont(reverbui::titleFont(28.0f));
+    titleLabel.setJustificationType(juce::Justification::centredLeft);
+    titleLabel.setColour(juce::Label::textColourId, reverbui::textStrong());
     addAndMakeVisible(titleLabel);
 
-    hintLabel.setText("Preset browser, vector front panel, and stereo timing view for quick spatial work.",
+    hintLabel.setText("Preset browser, stereo chorus shaping, and factory motion scenes for quick width and modulation work.",
                       juce::dontSendNotification);
-    hintLabel.setFont(juce::Font(12.5f));
-    hintLabel.setColour(juce::Label::textColourId, juce::Colour(0xff99a7b8));
+    hintLabel.setFont(reverbui::bodyFont(10.8f));
+    hintLabel.setJustificationType(juce::Justification::centredLeft);
+    hintLabel.setColour(juce::Label::textColourId, reverbui::textMuted());
     addAndMakeVisible(hintLabel);
 
     previousPresetButton.onClick = [this] { processor.stepPreset(-1); };
@@ -37,7 +38,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
             presetBrowser.open();
     };
     nextPresetButton.onClick = [this] { processor.stepPreset(1); };
-    settingsButton.onClick = [this]
+    browserButton.onClick = [this]
     {
         if (presetBrowser.isOpen())
             presetBrowser.close();
@@ -48,8 +49,10 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     for (auto* button : { static_cast<juce::Button*>(&previousPresetButton),
                           static_cast<juce::Button*>(&presetButton),
                           static_cast<juce::Button*>(&nextPresetButton),
-                          static_cast<juce::Button*>(&settingsButton) })
+                          static_cast<juce::Button*>(&browserButton) })
+    {
         addAndMakeVisible(*button);
+    }
 
     addAndMakeVisible(controls);
     addAndMakeVisible(presetBrowser);
@@ -59,27 +62,27 @@ PluginEditor::PluginEditor(PluginProcessor& p)
 
 void PluginEditor::paint(juce::Graphics& g)
 {
-    ssp::ui::drawEditorBackdrop(g, getLocalBounds().toFloat().reduced(4.0f));
+    reverbui::drawEditorBackdrop(g, getLocalBounds().toFloat().reduced(2.0f));
 }
 
 void PluginEditor::resized()
 {
-    auto area = getLocalBounds().reduced(20, 18);
-    auto header = area.removeFromTop(70);
-    auto titleRow = header.removeFromTop(36);
+    auto area = getLocalBounds().reduced(22, 18);
+    auto header = area.removeFromTop(64);
+    auto titleRow = header.removeFromTop(30);
 
-    titleLabel.setBounds(titleRow.removeFromLeft(150));
+    titleLabel.setBounds(titleRow.removeFromLeft(164));
     titleRow.removeFromLeft(12);
-    previousPresetButton.setBounds(titleRow.removeFromLeft(34).reduced(0, 2));
+    previousPresetButton.setBounds(titleRow.removeFromLeft(34).reduced(0, 1));
     titleRow.removeFromLeft(6);
-    presetButton.setBounds(titleRow.removeFromLeft(270).reduced(0, 2));
+    presetButton.setBounds(titleRow.removeFromLeft(280).reduced(0, 1));
     titleRow.removeFromLeft(6);
-    nextPresetButton.setBounds(titleRow.removeFromLeft(34).reduced(0, 2));
-    titleRow.removeFromLeft(12);
-    settingsButton.setBounds(titleRow.removeFromLeft(60).reduced(0, 2));
+    nextPresetButton.setBounds(titleRow.removeFromLeft(34).reduced(0, 1));
+    titleRow.removeFromLeft(10);
+    browserButton.setBounds(titleRow.removeFromLeft(84).reduced(0, 1));
     hintLabel.setBounds(header);
 
-    area.removeFromTop(10);
+    area.removeFromTop(12);
     controls.setBounds(area);
     presetBrowser.setBounds(getLocalBounds());
     presetBrowser.setAnchorBounds(presetButton.getBounds(), controls.getBounds());
